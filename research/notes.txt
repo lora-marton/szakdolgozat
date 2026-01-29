@@ -1,0 +1,231 @@
+I should use 3D pose estimation, because it's better for tracking dance movements.
+(Lifting is first finding 2D coordinates and the estimating a depth - this would also probably work for me.)
+
+Tools:
+Tool,Accuracy,Speed,Best For...
+MediaPipe,High,Excellent,"Mobile apps, real-time web browsers, and single-dancer tracking."
+YOLO11 Pose,Very High,High,"The current 2026 industry standard. Fast, robust against blurry motion, and handles multiple dancers well."
+OpenPose,High,Low,"Academic research or setups with high-end GPUs. It’s the ""OG"" but very heavy."
+MoveNet,Medium,High,Ultra-low-latency tracking on weak hardware (like old smartphones).
+
+Skeleton keypoints:
+- Core Joints: Hips, Shoulders, Spine.
+- Extremities: Wrists, Ankles, Knees, Elbows.
+- Confidence Scores: Every keypoint comes with a probability (0.0 to 1.0). If the score is low (e.g., $<0.5$), the joint is likely hidden; you should use "Temporal Smoothing" (interpolating from previous frames) to guess its location.
+
+Normalizing for Comparison
+- Translation Normalization (Centering)Move the dancer so their center of gravity (usually the midpoint of the hips) is at $(0, 0, 0)$.
+	$$P_{normalized} = P_{original} - P_{hip\_center}$$
+- Scale NormalizationA tall dancer and a short dancer should produce the same "score." Divide all coordinates by the length of the dancer's torso (distance between neck and mid-hip). This makes the skeleton unit-less.
+	$$P_{scaled} = \frac{P_{translated}}{||P_{neck} - P_{hip\_center}||}$$
+- Rotation Normalization (View Invariance)This is the hardest part. If Dancer A is facing the camera and Dancer B is at a 45° angle, their $(x, y)$ coordinates will be different even if they are doing the same move.The Fix: Rotate the 3D skeleton so the "Shoulder Line" is always parallel to the X-axis. This ensures you are always comparing the "Front View" of the dance.
+
+
+
+
+
+packages for now:
+- mediapipe: The AI model that finds the skeleton.
+- opencv-python: Handles video files (opening, reading frames, saving output).
+- numpy: The "math" library we use to normalize and shift coordinates.
+
+
+free good quality photos and videos: Pexels, Pixabay
+
+session starter: .\venv\Scripts\activate
+
+
+
+
+
+
+pose estimation: mediapipe, task api
+
+mediapipe is glitchy (even the heavy version), so YOLO11 is up for tryouts
+
+yolo11: x -> most accurate, m -> medium, n -> fastest
+
+back to mediapipe lol, it was better
+
+pose estimation with mediapipe:
+https://www.youtube.com/watch?v=06TE_U21FK4
+
+
+
+
+
+
+Pro-Tips for ML Training:
+- Normalization: Store your coordinates as values between 0 and 1 (normalized by width/height). This makes training much more stable.
+- Confidence Scores: If your extraction tool (like MediaPipe or OpenPose) provides confidence scores, store them as the 3rd or 4th coordinate $(x, y, score)$. Your model will learn to "distrust" low-score joints.
+- Data Types: Use float32 instead of float64. It cuts your file size in half with zero meaningful loss in precision for pose data.
+
+
+question: how to store the medium sized dataset I use for training?
+
+Best workflow for 50 videos:
+1. Store everything in HDF5 for your ML training.
+2. Create a small "Preview" API (using FastAPI or Flask) that reads the HDF5 file in Python and sends just the specific video's data to React as JSON.
+3. Use React to render: Use a <canvas> or SVG to draw the lines between the $(x, y)$ coordinates.
+
+
+// Example: Drawing a frame in React
+const drawSkeleton = (ctx, keypoints) => {
+  // keypoints = [[x1, y1], [x2, y2], ...]
+  const connections = [[0, 1], [1, 2], [2, 3]]; // Define which joints connect
+  connections.forEach(([start, end]) => {
+    ctx.beginPath();
+    ctx.moveTo(keypoints[start][0], keypoints[start][1]);
+    ctx.lineTo(keypoints[end][0], keypoints[end][1]);
+    ctx.stroke();
+  });
+};
+
+
+This video demonstrates how the H5Web ecosystem allows you to explore and visualize HDF5 data directly within a web interface using performant WebGL components.
+https://www.youtube.com/watch?v=wraFt4eCn8I
+
+decided data format: HDF5 - best for medium sized datasets, stores everything in one binary file (catch: that file is not understandable)
+
+
+
+
+
+
+how much data?
+
+For a "Sanity Check" (Testing your code): 1–5 videos (~5,000 frames). The model will overfit (memorize), but you'll know your pipeline works.
+
+For a Basic Recognizer (e.g., "Is this a jump or a turn?"): 20–50 videos. This is exactly where you are starting. If you have different people performing the same moves, the model will start to generalize.
+
+For High-Level Performance (e.g., "Scoring a pro dancer"): 500+ videos. Large datasets like NTU RGB+D use over 56,000 sequences to reach 90%+ accuracy.
+
+The "Golden Rule" for Dance: It's not just the number of videos; it's the diversity. 50 videos of the same person in the same room are less valuable than 20 videos of different people in different outfits/lighting.
+
+
+
+strategies for dance data:
+
+- Frame Rate Consistency: Ensure all videos are saved at the same FPS (e.g., 30 FPS). If one is 60 and one is 30, your model will think one dancer is moving twice as fast.
+- Relative vs. Absolute: Don't just save raw pixel coordinates (e.g., $x=1080$). Save normalized coordinates ($0.0$ to $1.0$).
+- The "Hip-Centric" Trick: For dance, it’s often helpful to subtract the "Mid-Hip" coordinate from all other points. This "centers" the dancer so the model learns the movements rather than where they are standing in the room.
+
+
+
+
+
+If you are building a model to compare dancers (e.g., specific moves, style matching, or scoring), the Hybrid Approach is mathematically and conceptually superior to Skeletons alone.
+
+Skeletons are mathematically precise but visually "thin."
+- The "Stick Figure" Problem: A skeleton defines the angles of the bones, but it loses the volume of the dancer.
+- Negative Space: In dance (form/ballet), the shape of the empty space between the arms and the body is critical. A skeleton only gives you the boundaries of that space (the joints), but the segmentation mask explicitly defines the entire filled volume.
+- Robustness: Keypoint detectors often "jitter" (a knee point jumps 5 pixels). Segmentation masks are usually more stable over time (temporal coherence). If the skeleton glitches, the mask likely won't, providing a backup signal for your model.
+
+
+
+When you train your model later, you will essentially have two "eyes":
+1. The Mechanic (Skeleton): Checks if the knee angle is exactly 90 degrees.
+2. The Artist (Mask): Checks if the overall silhouette matches the reference.
+
+The Comparison Logic:
+- Skeleton Metric: Euclidean distance between joints (Accuracy).
+- Mask Metric: IoU (Intersection over Union) or Shape Embeddings.
+- Example: Dancers A and B might have the exact same wrist position, but Dancer A has their shoulders hunched (changing the silhouette) while Dancer B has them down. The skeleton might miss the shoulder nuance if the neck keypoint is stable, but the mask will show a different "blob" shape around the neck/shoulders.
+
+
+
+For your extractor and future model, I recommend the "Feature Embedding" Strategy.
+
+A. Storage (The Extractor): Do not save full-resolution (1080p) masks. It is storage suicide and unnecessary for shape analysis.
+- Action: Resize masks to 256x256 (or even 128x128). This preserves 99% of the relevant shape information (posture, limb thickness) while reducing file size by ~50x.
+- Format: Save as compressed binary/integer maps.
+
+B. The Model (Future Work): Instead of comparing raw pixels (which fails if the camera zooms in slightly), you will train a small generic ConvNet (Encoder).
+- Input: 256x256 Mask.
+- Output: A "Shape Vector" (e.g., 64 numbers) describing the silhouette.
+- Comparison: You compare the Shape Vector of Dancer A vs. Dancer B. This vector is robust to small shifts but sensitive to posture changes.
+
+
+
+
+
+
+DTW
+
+
+Dynamic Time Warping (DTW) is absolutely essential for your project. In fact, for dance comparison, it is arguably the single most important algorithm you will use alongside the feature extraction.
+
+
+1. The Problem: "The Timing Mismatch"
+
+Imagine two dancers performing the exact same routine.
+
+- Dancer A moves at a steady pace.
+- Dancer B starts slightly slower, speeds up in the middle, and catches up at the end.
+
+If you compare them frame-by-frame (Frame 1 vs Frame 1, Frame 10 vs Frame 10):
+- At Frame 50, Dancer A might be raising their hand.
+- At Frame 50, Dancer B might still be starting to raise their hand.
+
+Result: Mathematically, the error is huge (Hand is up vs Hand is down). You tell Dancer B "Your form is wrong!", but their form is perfect—their timing was just different.
+
+
+2. The Solution: "Elastic Matching"
+
+DTW doesn't compare Frame[i] to Frame[i]. It looks for the best possible match forward or backward in time.
+
+- It asks: "Which frame of Dancer B looks most like Frame 50 of Dancer A?"
+- It finds that Frame 50 (A) matches Frame 54 (B).
+- It "warps" the time axis (stretching and shrinking it like a rubber band) to align the moves perfectly.
+
+
+3. Why it's perfect for your "Hybrid Approach"
+
+You have two types of data now:
+
+1. Skeleton (Vector Trajectories): Ideal for DTW. You run DTW on the skeleton joint angles. This gives you the "Alignment Path".
+2. Masks (Visual Shapes):
+	- Without DTW: You compare Mask A[50] vs Mask B[50]. (Mismatch).
+	- With DTW: You use the "Alignment Path" map to compare Mask A[50] vs Mask B[54].
+
+Result: You are now comparing the Same Pose against the Same Pose, even if they happened at different times.
+
+
+4. Recommendation
+
+- Phase 1 (Alignment): Use DTW on the Skeleton data (since it's low-dimensional and clean) to calculate the "Time Warp Path".
+- Phase 2 (Scoring): Use that path to compare your Segmentation Masks and Trajectories. This allows you to separate "Timing Errors" (how much did I have to warp?) from "Form Errors" (even after warping, was the arm straight?).
+
+
+
+
+For training, I need videos with fixed camera positions and zero moving if possible!!!
+
+
+
+
+
+kell architektúra és design pattern + felhős tárolás
+
+április elejére legyen kész a program
+
+záróvizsga utánanézni
+
+Dani ötlete: key moments kigyűjtése és összehasonlítása
+
+
+
+
+Summary:
+- mediapipe for pose estimation
+- hdf5 format for data storage
+- extracted from videos: skeleton and segmentation masks (maybe key points too?) + trajectory is stored
+
+
+Next steps:
+- find fitiing software architecture and design pattern
+- start coding frontend
+- get two similar videos and try DTW
+- connect fronend and backend
+
+

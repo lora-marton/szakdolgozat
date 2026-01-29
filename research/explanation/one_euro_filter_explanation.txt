@@ -1,0 +1,30 @@
+The One Euro Filter is a smoothing algorithm specifically designed to balance two conflicting goals in real-time tracking: reducing jitter (noise) and minimizing lag (latency).
+
+It achieves this by dynamically changing its "sensitivity" based on how fast the object is moving.
+
+How it works (The Logic)
+When you are still (Low Speed): The filter assumes any small changes are just noise (jitter). It applies strong smoothing (low cutoff frequency) to keep the keypoints stable and steady.
+When you are moving (High Speed): The filter assumes the changes are deliberate motion. It applies weak smoothing (high cutoff frequency) to follow your movement instantly, reducing the feeling of "lag".
+The Parameters
+In the 
+call
+(self, t, x)
+ function, the filter takes the current timestamp t and value x and uses these parameters:
+
+min_cutoff (Minimum Cutoff Frequency)
+Meaning: The baseline smoothing level when the object is stationary.
+Effect:
+Lower (e.g., 0.1): Very stable when still, but can feel "floaty" or slow to start moving.
+Higher (e.g., 1.0): Responsive, but you might see the keypoints "shaking" even when the dancer is standing still.
+beta (Speed Coefficient)
+Meaning: How aggressively the filter "wakes up" when it detects motion. It controls the slope of the adaptation.
+Effect:
+Higher (e.g., 20.0): The filter drastically reduces smoothing as soon as it detects speed. This reduces lag significantly during fast dance moves.
+Lower (e.g., 1.0): The filter remains somewhat "heavy" even during movement, which might look smoother but will trail behind the real dancer (lag).
+d_cutoff (Derivative Cutoff)
+Meaning: A secondary filter just for calculating the speed (derivative) itself.
+Effect: Usually kept at 1.0. It ensures that a single noisy frame doesn't trick the filter into thinking there's a huge burst of speed.
+Return Value
+The function returns x_hat, which is the new filtered position. You use this value instead of the raw landmark coordinate to draw your skeleton or save your data.
+
+In summary: By increasing beta to 20.0 in the previous step, we told the filter: "As soon as the dancer moves, trust the new data more and stop smoothing so much," which is why the keypoints should feel snappier now.

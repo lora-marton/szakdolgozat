@@ -1,0 +1,117 @@
+hasonló projektek:
+
+https://www.asksia.ai/college-ai/tutor/Dance-ai
+- hasonló, videófeltöltés, összehasonlítás + szöveges magyarázatok (fizetős)
+- problem-solving features include Explain Deeper (providing layered explanations), Explain Easier (simplifying complex concepts), Check Answer (verifying the correctness and completeness of answers), and Visualization (generating images to aid comprehension, especially useful for engineering topics)
+- tananyag összefoglalására is fókuszál (nekem ilyen nem lesz) és chatbox feature is van
+- tetszik: a videó felbontható részekre, lassítható, loopolható
+- ahogy észrevettem, ballett példákat hoz (másik táncstílusra fókuszál, mint én)
+- osztott képernyős tanulás ötlete is tetszik
+- összefoglaló: Asksia.ai's transcription service supports uploading various audio and video formats (e.g., MP4, WAV) and provides multilingual transcription and translation. It also generates a smart outline with keywords, main content, and key sentences, offers dual-screen interaction with simultaneous audio playback and subtitles, and includes a ChatBox Q&A feature with AI-generated questions and answers.
+
+https://github.com/zin288/DanceVision-AI-Driven-Dance-Proficiency-Assessment
+- szakdogához hasonló projektnek tűnik
+- a pózokra és azok helyességére fókuszál inkább
+
+https://github.com/goodCycle/AI-Dance-Coach
+- szintén egyetemi projektnek tűnik
+- leírja miket használ: 
+    React-Native - Front end framework
+    Flask - Backend framework for processing requests
+    OpenPose - Pose estimation model
+    OpenCV - Video processing
+- The prerequisites are split up into three parts:
+    Backend - OpenPose
+    Backend - Flask Server
+    Frontend - React Native App
+- igazából IOS mobilos applikáció
+- szépen strukturált, logikusnak tűnő részekre van bontva
+
+
+
+
+fontos pillérek
+
+- pose estimation: OpenPose
+https://github.com/CMU-Perceptual-Computing-Lab/openpose
+https://www.geeksforgeeks.org/machine-learning/openpose-human-pose-estimation-method/
+
+- time alignment: DTW, GTW
+https://medium.com/%40markstent/dynamic-time-warping-a8c5027defb6
+
+- embedding: action recognition / video embedding models (I3D, C3D, TimeSformer) ?
+
+- rhythm / audio alignment
+
+- feedback preparation
+
+- training datasets
+
+
+
+
+érdekes:
+
+https://cs231n.stanford.edu/2025/papers/CS_231N_Final_Project__Latex_Writeup_Update%20-%20Henry%20Jingsong%20Zhou.pdf
+- stanfordi tanulmány, témája: pose estimation, vision transformers, DTW
+- hasznos lehet, szépen részletesen leírja a videók feldolgozásának alapjait
+
+https://www.nature.com/articles/s41598-024-81762-8
+- téma: Human motion similarity evaluation based on deep metric learning
+
+https://www.tandfonline.com/doi/full/10.1080/14794713.2024.2338927#abstract
+- téma: Exploring the impact of machine learning on dance performance: a systematic review
+
+https://nhsjs.com/2023/creating-a-machine-learning-based-dance-move-correction-system-and-improving-the-accuracy-of-the-system/#google_vignette
+- téma: Creating a Machine Learning-based Dance Move Correction System and Improving the Accuracy of the System
+
+https://dl.acm.org/doi/10.1145/3708359.3712077
+- téma: Real-Time Full-body Interaction with AI Dance Models: Responsiveness to Contemporary Dance
+
+https://www.sciencedirect.com/science/article/abs/pii/S1071581924001939
+- téma: Effects of AI-assisted dance skills teaching, evaluation and visual feedback on dance students' learning performance, motivation and self-efficacy
+
+https://digitalcommons.usf.edu/cgi/viewcontent.cgi?article=9382&context=etd
+- téma: A Comparison of Verbal Feedback and Video Feedback to Improve Dance Skills
+
+https://www.mdpi.com/2227-7080/6/1/31
+- téma: Dance Pose Identification from Motion Capture Data: A Comparison of Classifiers
+
+https://www.tandfonline.com/doi/full/10.1080/14647893.2025.2524160
+- téma: Using AI-based feedback in dance education - a literature review
+
+https://psycnet.apa.org/fulltext/2022-24169-001.html
+- téma: A Comparison of Verbal Feedback and Video Feedback to Improve Dance Skills
+
+https://computationalcreativity.net/iccc21/wp-content/uploads/2021/09/ICCC_2021_paper_114.pdf
+- téma: Composition, Performance and Evaluation: A Dance Education Framework for AI Systems
+
+https://reelmind.ai/blog/ai-for-dance-videos-automated-choreography-analysis-and-enhancement
+- téma: AI for Dance Videos: Automated Choreography Analysis and Enhancement
+
+https://www.aiarty.com/ai-video-generator/ai-dance-video-generator.htm
+- az 5 legjobb tánc generáló MI, leírja mi alapján eldönthető, hogy melyik jó
+
+
+
+adat:
+
+https://markgituma.medium.com/dance-video-datasets-for-artificial-intelligence-6c0a77f2b929
+- téma: Dance Video Datasets for Artificial Intelligence
+
+https://github.com/xrenaa/Skeleton_Dance_Dataset
+- téma: a python data preprocess code of the skeleton dataset of "Let’s Dance: Learning From Online Dance Videos"
+- sajnos a Let's Dance adathalmaz oldala már nem megtalálható :(
+
+https://www.researchgate.net/publication/322674777_Let%27s_Dance_Learning_From_Online_Dance_Videos
+- cikk témája: Let's Dance: Learning From Online Dance Videos
+
+
+
+egyéb:
+
+https://www.inf.elte.hu/content/programtervezo-informatikus-bsc-szakdolgozat-tudnivalok.t.1138?m=192
+
+https://developer.mozilla.org/en-US/docs/Glossary/MVC
+
+https://ggombos.web.elte.hu/szakdoli/
