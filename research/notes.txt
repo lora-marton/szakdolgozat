@@ -229,3 +229,53 @@ Next steps:
 - connect fronend and backend
 
 
+
+
+
+
+architecture: MVC + Service layer
+
+
+Technically, you are moving toward what is known as N-Tier Architecture (specifically 3-Tier or 4-Tier) or, more modernly, the Domain-Driven Design (DDD) Lite approach.
+
+While there isn't one single "catchy" name for "MVC + Services," it is most commonly referred to by architects as:
+
+1. Service-Oriented MVC (or "The Service Layer Pattern")
+This is the most direct name. You are taking the Controller from MVC and delegating its "work" to a Service Layer.
+
+The Controller: Handles the "Protocol" (HTTP, JSON, Status Codes).
+
+The Service: Handles the "Domain" (The actual dance comparison logic).
+
+2. Hexagonal Architecture (Ports and Adapters)
+If you keep going down this path of "clean code," you’ll end up here. The idea is that your Core Logic (the dance scoring math) sits in the center, and everything else (the Database, the React Frontend, the AI Frameworks) are just "adapters" that plug into it.
+
+3. N-Tier Architecture
+This is the "classic" enterprise term.
+
+Presentation Tier: Your React Frontend.
+
+Logic/Service Tier: Your Python services (The AI and math).
+
+Data Tier: Your Database (PostgreSQL/MongoDB).
+
+
+
+In a standard MVC, the Controller is like a waiter who also cooks the food. In your Service-based architecture:
+
+The Controller is the Waiter (takes your order/video, brings the bill/score).
+
+The Service is the Chef (knows exactly how to use the "MediaPipe" stove and the "DTW Math" knife).
+
+This separation is vital for you because AI models change fast. Last year it was MediaPipe; this year it’s YOLO11x; next year it might be something else. With a Service Layer, you don't have to rewrite your whole app—you just swap the "Chef."
+
+
+Feature			Standard MVC				MVC + Service Layer
+Code Organization	Logic is trapped in Controllers		Logic is isolated and reusable
+Testing			Hard (must mock HTTP requests)		Easy (test math functions directly)
+Scalability		"Fat" and messy over time		Scalable and "Clean"
+AI Integration		Hard to swap models			Easy to "Plug and Play"
+
+
+
+

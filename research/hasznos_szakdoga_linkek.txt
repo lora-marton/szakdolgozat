@@ -115,3 +115,25 @@ https://www.inf.elte.hu/content/programtervezo-informatikus-bsc-szakdolgozat-tud
 https://developer.mozilla.org/en-US/docs/Glossary/MVC
 
 https://ggombos.web.elte.hu/szakdoli/
+
+
+
+
+
+---------------------------------------------------------------------------------
+
+
+
+
+
+architektúrákról:
+
+service layer: https://martinfowler.com/eaaCatalog/serviceLayer.html
+
+Python architectures: https://www.cosmicpython.com/book/preface.html
+
+service layer example: https://dev.to/alexis_jean/organize-your-code-with-the-service-layer-pattern-a-simple-python-example-2pnn
+
+
+
+
