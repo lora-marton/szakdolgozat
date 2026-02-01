@@ -1,27 +1,26 @@
 import React, { useState, useRef } from 'react';
-import { Box, Paper, Typography, Button, Stack } from '@mui/material';
+import { Box, Paper, Typography, Button } from '@mui/material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 
-const Upload2 = () => {
+interface UploaderProps {
+    person: string;
+    fileSetter: (file: File) => void;
+}
+
+const Uploader = ({ person, fileSetter }: UploaderProps) => {
     const [file, setFile] = useState<File | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             setFile(e.target.files[0]);
+            fileSetter(e.target.files[0]);
             console.log("File selected:", e.target.files[0].name);
         }
     };
 
     const handleSearchClick = () => {
         inputRef.current?.click();
-    };
-
-    const handleSubmit = () => {
-        if (file) {
-            console.log("Submitting file:", file.name);
-            // Add actual upload logic here
-        }
     };
 
     return (
@@ -46,7 +45,7 @@ const Upload2 = () => {
 
                 <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
                     <Typography variant="h5" component="div">
-                        Upload a file
+                        Upload a video of {person}
                     </Typography>
 
                     {!file ? (
@@ -66,21 +65,14 @@ const Upload2 = () => {
                                 </Typography>
                             </Box>
 
-                            <Stack direction="row" spacing={2}>
-                                <Button
-                                    variant="outlined"
-                                    onClick={handleSearchClick}
-                                >
-                                    Search other file
-                                </Button>
-                                <Button
-                                    variant="contained"
-                                    color="primary"
-                                    onClick={handleSubmit}
-                                >
-                                    Submit
-                                </Button>
-                            </Stack>
+                            <Button
+                                variant="contained"
+                                size="large"
+                                onClick={handleSearchClick}
+                                startIcon={<CloudUploadIcon />}
+                            >
+                                Search other file
+                            </Button>
                         </Box>
                     )}
                 </Box>
@@ -89,4 +81,4 @@ const Upload2 = () => {
     );
 };
 
-export default Upload2;
+export default Uploader;

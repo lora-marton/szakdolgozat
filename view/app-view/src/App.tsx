@@ -1,14 +1,13 @@
+import Stack from "@mui/material/Stack"
 import Header from "./components/Header"
-import Upload from "./components/Upload"
-import Upload2 from "./components/Upload2"
+import FileChooser from "./components/FileChooser"
 
 const App = () => {
   return (
-    <>
+    <Stack sx={{ p: 2, display: 'flex', justifyContent: 'center' }}>
       <Header />
-      <Upload />
-      <Upload2 />
-    </>
+      <FileChooser />
+    </Stack>
   )
 }
 
