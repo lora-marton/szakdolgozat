@@ -33,6 +33,9 @@ const Uploader = ({ person, fileSetter }: UploaderProps) => {
                     p: 4,
                     textAlign: 'center',
                     bgcolor: 'background.paper',
+                    borderStyle: 'solid',
+                    borderColor: 'primary.main',
+                    borderWidth: 0.25,
                 }}
             >
                 <input
