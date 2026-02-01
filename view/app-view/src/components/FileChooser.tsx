@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Button from '@mui/material/Button';
 import Grid from '@mui/material/Grid';
 import Uploader from './Uploader';
+import { sendFiles } from '../api/FileSender';
 
 const FileChooser = () => {
     const [teacherFile, setTeacherFile] = useState<File | null>(null);
@@ -11,6 +12,7 @@ const FileChooser = () => {
         if (teacherFile && studentFile) {
             console.log("Submitting teacher file:", teacherFile.name);
             console.log("Submitting student file:", studentFile.name);
+            sendFiles(teacherFile, studentFile);
         }
     };
 
