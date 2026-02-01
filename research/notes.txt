@@ -279,3 +279,33 @@ AI Integration		Hard to swap models			Easy to "Plug and Play"
 
 
 
+
+The 3-Tier architecture breakdown
+
+Tier 1: Presentation Tier (The Face)
+- What it is: The code the user actually sees and touches.
+- Your Project: Your React frontend.
+- Responsibility: Recording the user's dance, displaying the "Teacher" video, and showing the final score/feedback. It doesn't know how the score is calculated; it just asks the next tier for the result.
+
+Tier 2: Logic/Application Tier (The Brain)
+- What it is: The "Middleman" where all the calculations happen.
+- Your Project: Your Python/FastAPI/Flask backend.
+- Responsibility: This is where your Services live. It receives the video files, runs them through YOLO or MediaPipe, calculates the pose similarity, and decides if the student "passed."
+
+Tier 3: Data Tier (The Memory)
+- What it is: Where data is stored permanently.
+- Your Project: Your PostgreSQL or MongoDB database.
+- Responsibility: Saving user profiles, storing "high scores," and keeping the pre-processed "Teacher" pose data so you don't have to re-calculate it every time.
+
+
+
+Think of it this way: N-Tier is the physical map (where the code lives), and MVC + Service is the internal organization (how the code is written).
+
+N-Tier Level	MVC + Service Component		Logic in your Dance AI
+Presentation	View (React)			Upload Button, Video Player, Score Graph.
+Logic		Controller + Service		The API endpoint that says "Calculate Score" and the ComparisonService that does the math.
+Data		Model				The database table for DanceMove and UserResult.
+
+
+
+conclusion: I don't need the service component (no database for model, so the logic is in model), so only MVC
