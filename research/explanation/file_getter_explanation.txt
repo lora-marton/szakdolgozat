@@ -1,0 +1,35 @@
+Imports
+
+Line 1: import os - Imports the operating system module, used here to create directories and handle file paths compatible with Windows.
+Line 2: from flask import Flask, request, jsonify
+Flask: The main class to create the web server application.
+request: Allows us to access the data sent by the user (like the uploaded files).
+jsonify: Helper to convert Python dictionaries (like {'status': 'ok'}) into JSON responses that the frontend can read.
+Line 3: from flask_cors import CORS - Imports the Cross-Origin Resource Sharing extension. This allows your frontend (likely running on port 3000 or similar) to talk to this backend (running on port 5000) without the browser blocking it for security reasons.
+
+Configuration
+
+Line 5: app = Flask(__name__) - Creates the actual Flask web server instance.
+Line 6: CORS(app) - Enables CORS for all routes in the app, allowing connections from any domain (e.g., your localhost frontend).
+Lines 10-12:
+UPLOAD_FOLDER = ... - Calculates the absolute path to a folder named uploads right next to this script file. Using os.path.abspath(__file__) ensures it works no matter where you run the script from.
+if not os.path.exists... - Checks if that folder exists; if not, os.makedirs creates it.
+
+The Endpoint
+
+Line 14: @app.route('/dance_videos', methods=['POST']) - This "decorator" tells Flask: "When someone sends a POST request to the URL path /dance_videos, run the function below."
+Line 15: def upload_files(): - The function definition that handles the request.
+Lines 16-17: Checks if the request actually contains files named teacher and student. If not, it sends back a 400 Bad Request error with a JSON message.
+Lines 19-20: Retrieves the actual file objects from the request so we can work with them.
+Lines 22-23: Checks if the user submitted empty parts (e.g., clicked upload without selecting a file). Returns an error if so.
+Lines 26-27: Creates the full save path for each file (e.g., C:\...\uploads\video.mp4) by combining the upload folder path with the original filename.
+Lines 29-30: .save() writes the file data from memory to the hard drive at the paths we just defined.
+Line 32: Prints a confirmation to your terminal so you can see it's working.
+Lines 34-38: Returns a 200 OK success status code and a JSON object containing the paths where the files were saved. This is what your frontend receives in data.
+
+Run Block
+
+Line 40: if __name__ == '__main__': - Standard Python check. It means "only run the code block below if I am running this script directly (not if I'm importing it into another script)."
+Line 42: app.run(debug=True, port=5000) - Starts the web server!
+debug=True: If the code crashes, the browser will show the error trace, and the server will auto-restart if you edit the code file.
+port=5000: Sets the port to listen on.

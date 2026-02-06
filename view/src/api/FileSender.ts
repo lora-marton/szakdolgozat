@@ -4,7 +4,7 @@ export const sendFiles = async (teacherFile: File, studentFile: File) => {
     formData.append('student', studentFile);
 
     try {
-        const response = await fetch('http://localhost:5000/process_video', {
+        const response = await fetch('http://localhost:5000/dance_videos', {
             method: 'POST',
             body: formData,
         });
