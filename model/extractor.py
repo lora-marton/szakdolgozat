@@ -9,8 +9,8 @@ from one_euro_filter import OneEuroFilter
 # Configuration
 model_path = 'pose_landmarker_heavy.task'
 video_path = 'videos/test_dance1.mp4'
-output_path = 'output/dance_data_processed.h5'
-output_mask_path = 'output/dance_masks.h5'
+output_path = '../data/dance_data.h5'
+output_mask_path = '../data/dance_masks.h5'
 
 TARGET_FPS = 60.0
 # Reduced target size to ensure dancer fits even with arms raised

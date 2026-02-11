@@ -309,3 +309,19 @@ Data		Model				The database table for DanceMove and UserResult.
 
 
 conclusion: I don't need the service component (no database for model, so the logic is in model), so only MVC
+
+
+
+MVC architecture:
+- model: python "backend" (comparison + feedback generation)
+- view: react frontend (components + api)
+- controller: python "glue" (flask/fastapi + video processing)
+
+
+
+frontend: Vite
+
+running:
+- navigate to view folder
+- npm install
+- npm run dev

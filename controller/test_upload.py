@@ -2,7 +2,7 @@ import requests
 import os
 
 # API URL
-url = 'http://localhost:5000/dance_videos'
+url = 'http://localhost:8000/dance_videos'
 
 # Create dummy video files for testing
 def create_dummy_file(filename):
