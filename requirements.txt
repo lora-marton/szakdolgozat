@@ -4,5 +4,5 @@ opencv-python
 numpy
 h5py
 fastapi
-uvicorn
+uvicorn[standard]
 python-multipart

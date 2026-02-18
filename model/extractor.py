@@ -4,10 +4,10 @@ import numpy as np
 import h5py
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from one_euro_filter import OneEuroFilter
+from model.one_euro_filter import OneEuroFilter
 
 # Configuration
-model_path = 'pose_landmarker_heavy.task'
+model_path = 'model/pose_landmarker_heavy.task'
 video_path = 'videos/test_dance1.mp4'
 output_path = '../data/dance_data.h5'
 output_mask_path = '../data/dance_masks.h5'
@@ -46,7 +46,7 @@ def get_torso_stats(landmarks, image_width, image_height):
     torso_len = np.linalg.norm(mid_shoulder - mid_hip)
     return mid_hip, torso_len
 
-def process_video():
+def data_extraction(video_path, status_callback=None):
     filters = {}
     
     collected_raw = [] 
@@ -81,6 +81,9 @@ def process_video():
                 continue
                 
             last_processed_time += frame_interval_ms
+            
+            if frame_idx % 60 == 0 and status_callback:
+                status_callback(f"Processing frame {int(frame_idx)}...")
             
             # --- Processing ---
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -228,4 +231,4 @@ def process_video():
         print("Done!")
 
 if __name__ == "__main__":
-    process_video()
+    data_extraction(video_path)

@@ -3,6 +3,8 @@ import shutil
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+from typing import List
+from model.video_processor import process_videos
 
 app = FastAPI()
 
@@ -22,8 +24,37 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(os.path.dirname(CURRENT_DIR), 'uploaded_videos')
 
 # Ensure directory exists
+# Ensure directory exists
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
+
+import asyncio
+from fastapi.responses import StreamingResponse
+
+# Global event queue for broadcasting
+# In a real app this might be a list of queues (one per client)
+start_event = asyncio.Event()
+status_queue = asyncio.Queue()
+
+async def event_generator():
+    """
+    Yields events to the client.
+    Initial state: waiting for start signal.
+    """
+    while True:
+        # Check if we have messages in the queue
+        try:
+            # Wait for a message with a timeout so we can send keep-alive comments
+            message = await asyncio.wait_for(status_queue.get(), timeout=1.0)
+            yield f"data: {message}\n\n"
+        except asyncio.TimeoutError:
+            # Send a comment to keep the connection alive
+            yield ": keep-alive\n\n"
+
+@app.get("/events")
+async def events():
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
 
 @app.post("/dance_videos")
 async def upload_files(teacher: UploadFile = File(...), student: UploadFile = File(...)):
@@ -39,6 +70,21 @@ async def upload_files(teacher: UploadFile = File(...), student: UploadFile = Fi
         # Save student file
         with open(student_path, "wb") as buffer:
             shutil.copyfileobj(student.file, buffer)
+
+        # Event handler bridging function
+        async def sse_status_handler(message: str):
+            await status_queue.put(message)
+
+        await sse_status_handler("Starting video processing...")
+        
+        # Run processing in background task to not block the upload response?
+        # Ideally yes, but here we can just await it since the user is waiting for result?
+        # Actually, for SSE to be useful, we should return immediately or start a task.
+        # But user implementation was awaiting it. Let's keep awaiting it but feeding the queue.
+        # The SSE client will receive updates while this function runs.
+        
+        await process_videos(teacher_path, student_path, sse_status_handler)
+        await sse_status_handler("Processing complete.")
             
         return {
             "message": "Files uploaded successfully",
