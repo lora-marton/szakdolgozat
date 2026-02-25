@@ -580,7 +580,7 @@ Feedback	Calculated Scores	LLM Prompting (Text generation)
 Summary: components of comparison
 - timing - DTW
 - skeleton - joint angles
-- mask - IoU???
+- mask - see below (line 661)
 - trajectory - similar directions
 - style - tolerance buffers
 
@@ -733,3 +733,8 @@ video processing path:
 -> asyncio.to_thread: data_extraction(student, dir, 'student')
 -> student_data.h5 + student_masks.h5
 -> SSE: Processing complete
+
+
+
+
+correction: applying center of gravity analysis to the skeleton instead of hu moments on the mask - much simpler and easier
