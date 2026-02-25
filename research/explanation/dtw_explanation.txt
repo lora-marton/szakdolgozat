@@ -1,0 +1,179 @@
+What is DTW?
+
+Dynamic Time Warping finds the optimal alignment between two time series that may vary in speed.
+It answers: "Which frame of the student best matches each frame of the teacher?"
+
+
+
+
+The Key Steps
+
+
+Step 1: Define a Distance Function
+
+For each pair of frames (one from teacher, one from student), you need a number that says "how different are these two poses?"
+
+For your case, we take the 12 main joints (shoulders, elbows, wrists, hips, knees, ankles) and compute the Euclidean distance between their (x, y, z) positions:
+
+<distance(frame_A, frame_B) = sum of ||joint_A[i] - joint_B[i]|| for all 12 joints>
+
+
+Step 2: Build the Cost Matrix
+
+Imagine a grid where:
+
+Rows = teacher frames (T frames)
+Columns = student frames (S frames)
+
+Each cell (i, j) stores the distance between teacher frame i and student frame j:
+
+Student →  f0    f1     f2     f3     f4
+Teacher  ┌────┬────┬────┬────┬────┐
+  f0     │ 2   │ 8   │ 15   │ 20  │ 25  │
+  f1     │ 7   │ 3   │ 9    │ 16  │ 21  │
+  f2     │ 14  │ 6   │ 2    │ 8   │ 15  │
+  f3     │ 20  │ 13  │ 7    │ 3   │ 9   │
+  f4     │ 25  │ 19  │ 14   │ 6   │ 2   │
+         └────┴────┴────┴────┴────┘
+
+
+Step 3: Accumulate (Dynamic Programming)
+
+Build an accumulated cost matrix D where each cell stores the minimum total cost to reach that cell from the top-left corner (0, 0):
+
+<D[i][j] = cost[i][j] + min(
+    D[i-1][j],     # teacher advances, student stays (student is "ahead")
+    D[i][j-1],     # student advances, teacher stays (student is "behind")
+    D[i-1][j-1],   # both advance together (in sync)
+)>
+
+This is the "dynamic programming" part — each cell considers the cheapest way to arrive there.
+
+
+Step 4: Backtrack the Path
+
+Starting from the bottom-right (T-1, S-1), trace back through the matrix following the minimum-cost path to (0, 0). This gives you the alignment path — a list of (teacher_idx, student_idx) pairs:
+
+<# Example path:
+[(0,0), (1,1), (2,2), (2,3), (3,4), (4,5)]
+#                      ↑ student was slow here — teacher frame 2 maps to student frames 2 AND 3>
+
+
+Step 5: Use the Alignment
+
+Now every other metric can use this path:
+
+- Skeleton: Compare teacher_angles[0] vs student_angles[0], teacher_angles[1] vs student_angles[1], etc. — but using the aligned indices
+- Masks: Compare teacher_mask[2] vs student_mask[3] (not student_mask[2]!)
+- Timing error: How much "warping" was needed? If the path is mostly diagonal, the student's timing was good. If it has long horizontal/vertical stretches, they were rushing or lagging.
+
+
+
+
+What the Path Tells You Visually
+
+Perfect timing:        Student rushed:        Student lagged:
+  /                      /──                    │
+ /                      /                      /
+/                      /                      /──
+                                             /
+(diagonal = in sync)  (horizontal = student   (vertical = student
+                       did it too fast)        was too slow)
+
+
+
+
+Chosen dtw package: dtw-python
+
+1. Exact path — For dance comparison, you want the true optimal alignment, not an approximation. If fastdtw misaligns by even 2-3 frames, your angle comparison will compare wrong poses.
+
+2. Sakoe-Chiba band — This is exactly what you need for the repeated step problem you mentioned. You can set a window like window_size = 120 (2 seconds at 60fps), meaning the algorithm only searches ±2 seconds for a match. This:
+- Prevents matching a move from the beginning with a repeated move later
+- Speeds up computation (only fills a band of the cost matrix, not the whole grid)
+- Keeps it exact within that window
+
+3. Step patterns — dtw-python lets you control how the path moves. For dance, symmetric2 is ideal — it weights diagonal steps equally with horizontal/vertical ones, meaning "in sync" isn't penalized vs "one waited."
+
+4. Lightweight — Just numpy under the hood, no heavy ML frameworks.
+
+
+Speed Reality Check
+
+For a 60fps video that's 30 seconds long, you have ~1800 frames per dancer. The cost matrix is 1800×1800 = ~3.2M cells. With the Sakoe-Chiba band of 120 frames, you only compute ~430K cells. This runs in under a second with dtw-python.
+
+For a 2-minute video (~7200 frames), the full matrix would be ~52M cells (slow), but with the band it's ~1.7M — still fast.
+
+
+
+
+About the Repeated Steps Problem
+
+Great point about hip hop repeating moves! The Sakoe-Chiba window handles this naturally:
+
+<Teacher:  [step A] [step B] [step A again]
+Student:  [step A] [step B] [step A again]
+Without window: DTW might "skip" step B and match teacher's first A 
+                with student's second A (lower cost but wrong alignment!)
+With window (±2s): DTW can only look 2 seconds forward/back, 
+                   so it MUST match A→A, B→B, A→A in order.>
+
+The window size is a tradeoff — too small and it can't handle timing differences, too large and repeated moves might cross-match. 2 seconds is a good starting point for hip hop where moves are typically 1-4 beats.
+
+
+
+
+dtw.py - what it does:
+
+- Flattens 12 selected joints' (x, y, z) into a 36D vector per frame
+- Runs DTW with symmetric2 step pattern + Sakoe-Chiba band (default ±120 frames = 2s at 60fps)
+- Returns alignment path + normalized cost
+
+
+
+
+Symmetric2 step pattern
+
+The step pattern controls which moves the alignment path is allowed to make through the cost matrix.
+
+Step Patterns Visualized
+
+Think of the cost matrix grid. At each cell (i, j), the path can step to the next cell in specific ways:
+
+
+symmetric1 (simplest)
+
+Allowed moves from (i, j):
+  → (i, j+1)     student advances alone
+  ↘ (i+1, j+1)   both advance (in sync)
+  ↓ (i+1, j)     teacher advances alone
+Each move costs: d(i, j)  (just the local distance)
+
+Problem: Diagonal steps are "cheaper" because they cover 2 frames in one step but only pay for 1 distance. This makes the algorithm biased toward the diagonal — it prefers saying "they're in sync" even when they're not.
+
+
+symmetric2 (what we use)
+
+Same 3 moves, but with normalized weights:
+  → (i, j+1)     costs: d(i, j+1)
+  ↘ (i+1, j+1)   costs: d(i, j) + d(i+1, j+1)   ← pays for BOTH cells
+  ↓ (i+1, j)     costs: d(i+1, j)
+
+The key difference: a diagonal step pays double (both the source and destination cell). This means:
+
+- Moving diagonally costs the same per-frame as moving horizontally/vertically
+- No bias toward "in sync" vs "one is ahead"
+- The total cost is properly normalized by path length
+
+
+Why This Matters for Dance
+
+symmetric1:                         symmetric2:
+"Oh they're in sync!" (biased)     "Let me fairly check each option"
+
+If student is 0.5s behind:
+  sym1 might say: "mostly in sync"    sym2 says: "student is behind,
+  (because diagonal is cheap)          here's the honest cost"
+
+In short: symmetric2 gives you honest timing error measurements. The normalizedDistance you get back is directly comparable between different video pairs, regardless of their lengths. That's exactly what you need for scoring!
+
+

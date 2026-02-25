@@ -3,6 +3,7 @@ mediapipe
 opencv-python
 numpy
 h5py
+dtw-python
 fastapi
 uvicorn[standard]
 python-multipart
