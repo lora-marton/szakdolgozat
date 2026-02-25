@@ -717,3 +717,19 @@ The "Logic Flow" should look like this:
 3. Generate DTM from the Smoothed Mask of Dancer A.
 4. Compare Smoothed Mask of Dancer B against Dancer A's DTM.
 5. Weight the result by the Optical Flow "Energy" and Skeleton proximity.
+
+
+
+
+
+
+
+video processing path:
+-> POST /dance_videos
+-> Save files to uploaded_videos/
+-> Generate session dir: data/YYYYMMDD_HHMMSS/
+-> asyncio.to_thread: data_extraction(teacher, dir, 'teacher')
+-> teacher_data.h5 + teacher_masks.h5
+-> asyncio.to_thread: data_extraction(student, dir, 'student')
+-> student_data.h5 + student_masks.h5
+-> SSE: Processing complete

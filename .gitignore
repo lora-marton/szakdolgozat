@@ -28,6 +28,7 @@ dist/
 # Data & Output
 output/
 videos/
+*.h5
 *.mp4
 *.avi
 *.mov

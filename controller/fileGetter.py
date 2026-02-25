@@ -1,5 +1,6 @@
 import os
 import shutil
+from datetime import datetime
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -77,19 +78,18 @@ async def upload_files(teacher: UploadFile = File(...), student: UploadFile = Fi
 
         await sse_status_handler("Starting video processing...")
         
-        # Run processing in background task to not block the upload response?
-        # Ideally yes, but here we can just await it since the user is waiting for result?
-        # Actually, for SSE to be useful, we should return immediately or start a task.
-        # But user implementation was awaiting it. Let's keep awaiting it but feeding the queue.
-        # The SSE client will receive updates while this function runs.
+        # Create a session-specific output directory
+        session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_dir = os.path.join(os.path.dirname(CURRENT_DIR), 'data', session_id)
         
-        await process_videos(teacher_path, student_path, sse_status_handler)
+        await process_videos(teacher_path, student_path, output_dir, sse_status_handler)
         await sse_status_handler("Processing complete.")
             
         return {
             "message": "Files uploaded successfully",
             "teacher_path": teacher_path,
-            "student_path": student_path
+            "student_path": student_path,
+            "output_dir": output_dir
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -1,9 +1,12 @@
 import os
+import asyncio
 from model.extractor import data_extraction
 
-async def process_videos(teacher_file, student_file, event_handler=None):
+
+async def process_videos(teacher_file, student_file, output_dir='data', event_handler=None):
     """
-    Process videos and send status updates via event_handler(message: str)
+    Process videos and send status updates via event_handler(message: str).
+    Runs extraction in threads to avoid blocking the async event loop.
     """
     async def send_status(msg):
         print(msg)
@@ -17,15 +20,13 @@ async def process_videos(teacher_file, student_file, event_handler=None):
         return
 
     try:
-        # Wrapper for sync callback if needed, though we can't await here easily without a loop reference
-        # For now, we just let it run.
-        data_extraction(teacher_file)
+        await asyncio.to_thread(data_extraction, teacher_file, output_dir, 'teacher')
         await send_status("Teacher video extracted.")
-            
-        data_extraction(student_file)
+
+        await asyncio.to_thread(data_extraction, student_file, output_dir, 'student')
         await send_status("Student video extracted.")
-        
+
         await send_status("Processing complete.")
-            
+
     except Exception as e:
         await send_status(f"Error processing videos: {e}")
