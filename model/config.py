@@ -102,7 +102,20 @@ class ComparisonConfig:
     })
 
 
+@dataclass(frozen=True)
+class PreprocessorConfig:
+    """Configuration for preprocessing (audio sync + motion trimming)."""
+
+    # Audio cross-correlation
+    audio_sample_rate: int = 22050
+
+    # Motion energy thresholds
+    motion_threshold_ratio: float = 0.15   # fraction of max energy to count as active
+    min_active_duration: int = 10          # frames of sustained motion required
+
+
 # Default config instances
 DEFAULT_CONFIG = ExtractionConfig()
+DEFAULT_PREPROCESSOR_CONFIG = PreprocessorConfig()
 DEFAULT_COMPARISON_CONFIG = ComparisonConfig()
 

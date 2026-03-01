@@ -4,6 +4,8 @@ opencv-python
 numpy
 h5py
 dtw-python
+librosa
+scipy
 fastapi
 uvicorn[standard]
 python-multipart

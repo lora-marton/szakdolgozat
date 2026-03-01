@@ -738,3 +738,15 @@ video processing path:
 
 
 correction: applying center of gravity analysis to the skeleton instead of hu moments on the mask - much simpler and easier
+
+
+
+
+
+
+solving issues with matching the start of the choreography:
+
+1. Audio cross-correlation  →  sync the two videos (global offset)
+2. Motion energy detection  →  find active range in EACH video
+3. Take the INTERSECTION    →  keep only frames where BOTH are dancing
+4. Feed into DTW            →  align & compare

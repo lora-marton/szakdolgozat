@@ -9,18 +9,21 @@ import numpy as np
 import h5py
 
 from model.config import DEFAULT_COMPARISON_CONFIG
+from model.preprocessor import preprocess
 from model.dtw import align_sequences
 from model.skeleton_metrics import compute_joint_angles, compute_cog, compare_angles
 from model.mask_metrics import compute_iou
 from model.trajectory_metrics import compare_trajectories
 
 
-def compare_dances(output_dir, config=None):
+def compare_dances(output_dir, teacher_video=None, student_video=None, config=None):
     """
     Compare teacher and student dance data from a session directory.
 
     Args:
         output_dir: Path to session directory containing teacher_*.h5 and student_*.h5 files.
+        teacher_video: Path to the teacher video file (needed for audio sync).
+        student_video: Path to the student video file (needed for audio sync).
         config: ComparisonConfig instance (uses DEFAULT_COMPARISON_CONFIG if None).
 
     Returns:
@@ -41,6 +44,15 @@ def compare_dances(output_dir, config=None):
     # --- Load data ---
     teacher_data = _load_session_data(output_dir, 'teacher')
     student_data = _load_session_data(output_dir, 'student')
+
+    # --- Phase 0: Preprocessing (sync + trim) ---
+    if teacher_video and student_video:
+        teacher_data, student_data = preprocess(
+            teacher_data, student_data,
+            teacher_video, student_video,
+        )
+    else:
+        print("[Comparator] Video paths not provided — skipping audio sync & trimming.")
 
     # --- Phase A: Temporal Alignment (DTW) ---
     alignment_path, timing_cost = align_sequences(

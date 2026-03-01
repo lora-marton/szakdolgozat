@@ -30,7 +30,10 @@ async def process_videos(teacher_file, student_file, output_dir='data', event_ha
 
         # Phase 2: Comparison
         await send_status("Comparing performances...")
-        results = await asyncio.to_thread(compare_dances, output_dir)
+        results = await asyncio.to_thread(
+            compare_dances, output_dir,
+            teacher_video=teacher_file, student_video=student_file,
+        )
         await send_status(f"Comparison complete. Overall score: {results['overall_score']}%")
 
         return results
