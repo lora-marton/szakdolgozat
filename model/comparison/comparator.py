@@ -11,7 +11,7 @@ import h5py
 from model.config import DEFAULT_COMPARISON_CONFIG
 from model.preprocessing.preprocessor import preprocess
 from model.comparison.dtw import align_sequences
-from model.comparison.skeleton_metrics import compute_joint_angles, compute_cog, compare_angles
+from model.comparison.skeleton_metrics import compute_joint_angles, compute_cog, compare_angles, compare_cog
 from model.comparison.mask_metrics import compute_iou
 from model.comparison.trajectory_metrics import compare_trajectories
 
@@ -75,9 +75,15 @@ def compare_dances(output_dir, teacher_video=None, student_video=None, config=No
     # --- Phase B: Skeleton Comparison ---
     teacher_angles = compute_joint_angles(aligned_teacher_lm, config.joint_angles)
     student_angles = compute_joint_angles(aligned_student_lm, config.joint_angles)
-    skeleton_score, per_joint_scores, worst_frames = compare_angles(
-        teacher_angles, student_angles, config.joint_tolerances,
+    angle_score, per_joint_scores, worst_frames = compare_angles(
+        teacher_angles, student_angles, config.joint_tolerances, config.angle_sigma,
     )
+
+    teacher_cog = compute_cog(aligned_teacher_lm, config.cog_weights)
+    student_cog = compute_cog(aligned_student_lm, config.cog_weights)
+    cog_score = compare_cog(teacher_cog, student_cog, config.cog_sigma)
+
+    skeleton_score = config.weight_angles * angle_score + config.weight_cog * cog_score
 
     # --- Phase C: Mask Comparison ---
     mask_score, per_frame_iou = compute_iou(aligned_teacher_masks, aligned_student_masks)

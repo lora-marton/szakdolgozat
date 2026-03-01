@@ -54,6 +54,14 @@ class ComparisonConfig:
     weight_trajectory: float = 0.30
     weight_mask: float = 0.20
 
+    # Skeleton sub-weights: angles vs CoG (must sum to 1.0)
+    weight_angles: float = 0.80
+    weight_cog: float = 0.20
+
+    # Exponential decay parameters
+    angle_sigma: float = 25.0   # degrees — score ≈37% at tolerance + sigma
+    cog_sigma: float = 0.05    # normalized coords (0–1) — score ≈37% at this distance
+
     # DTW: which joints to use for alignment (12 main joints)
     dtw_joints: tuple = (
         11, 12,  # Shoulders
