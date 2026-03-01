@@ -9,11 +9,11 @@ import numpy as np
 import h5py
 
 from model.config import DEFAULT_COMPARISON_CONFIG
-from model.preprocessor import preprocess
-from model.dtw import align_sequences
-from model.skeleton_metrics import compute_joint_angles, compute_cog, compare_angles
-from model.mask_metrics import compute_iou
-from model.trajectory_metrics import compare_trajectories
+from model.preprocessing.preprocessor import preprocess
+from model.comparison.dtw import align_sequences
+from model.comparison.skeleton_metrics import compute_joint_angles, compute_cog, compare_angles
+from model.comparison.mask_metrics import compute_iou
+from model.comparison.trajectory_metrics import compare_trajectories
 
 
 def compare_dances(output_dir, teacher_video=None, student_video=None, config=None):

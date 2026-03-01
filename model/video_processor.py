@@ -1,7 +1,7 @@
 import os
 import asyncio
-from model.extractor import data_extraction
-from model.comparator import compare_dances
+from model.extraction.extractor import data_extraction
+from model.comparison.comparator import compare_dances
 
 
 async def process_videos(teacher_file, student_file, output_dir='data', event_handler=None):

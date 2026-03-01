@@ -9,8 +9,8 @@ Synchronises and trims two dance sequences before DTW alignment:
 """
 import numpy as np
 
-from model.audio_sync import compute_audio_offset
-from model.motion_energy import compute_motion_energy, find_active_range
+from model.preprocessing.audio_sync import compute_audio_offset
+from model.preprocessing.motion_energy import compute_motion_energy, find_active_range
 
 
 def preprocess(teacher_data, student_data, teacher_video, student_video, config=None):

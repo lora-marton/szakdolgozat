@@ -5,9 +5,9 @@ import numpy as np
 import h5py
 
 from model.config import DEFAULT_CONFIG
-from model.one_euro_filter import OneEuroFilter
-from model.normalizer import get_torso_stats, calibrate_scale, compute_follow_cam, warp_mask
-from model.visualization import draw_skeleton, draw_mask_overlay
+from model.extraction.one_euro_filter import OneEuroFilter
+from model.extraction.normalizer import get_torso_stats, calibrate_scale, compute_follow_cam, warp_mask
+from model.extraction.visualization import draw_skeleton, draw_mask_overlay
 
 
 def data_extraction(video_path, output_dir='data', label='dance', debug=False, status_callback=None, config=None):
