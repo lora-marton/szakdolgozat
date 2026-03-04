@@ -1,0 +1,98 @@
+1. Gaussian Decay
+The raw distance transform gives you a "how far from the edge" value in pixels. A pixel at the center of a limb might be 30px from the edge. But we don't want to use raw pixel distances — we want a score between 0 and 1 that says "how confidently is this a core body pixel."
+
+The Gaussian function does this:
+
+score = exp(-(distance² / (2 * σ²)))
+At distance = 0 (right at the edge): score = 1.0... wait, that's backwards. Let me clarify:
+Actually, the distance transform gives distance = 0 at the edge and increases inward. So we invert the logic: pixels far from the edge (deep inside the body) get high scores, pixels near the edge (where clothing flaps) get low scores.
+
+The Gaussian curve shape is:
+
+Center of limb (distance = 30px): score ≈ 1.0 (very confident body pixel)
+Mid-zone (distance = σ): score ≈ 0.61 (still good)
+Near the edge (distance = 2): score ≈ near 0 (unreliable, likely clothing)
+Why Gaussian and not linear? A linear falloff would penalize "slightly off" pixels almost as much as "way off" pixels. The Gaussian curve is much more forgiving in the center and drops steeply near the edge — which matches the physical reality that the core of a limb is stable while the surface (fabric) is noisy.
+
+The σ parameter controls how wide the "sweet spot" is. Larger σ = more forgiving (bigger soft zone), smaller σ = stricter (only the very center counts).
+
+2. DTM Comparison Method — Why Multiply?
+Here's the full logic step by step:
+
+Step 1: Take the teacher's smoothed mask (after EFD). Apply the distance transform + Gaussian decay. You now have a heat map:
+
+Bright center (1.0) = "this is definitely where the teacher's body is"
+Gradient edges (0.5–0.0) = "getting further from core body"
+Black (0.0) = "not the teacher's body at all"
+Step 2: Take the student's smoothed mask (binary: 1 = body, 0 = not body).
+
+Step 3: Multiply the student's binary mask × the teacher's heat map.
+
+What this achieves:
+
+Student pixel overlaps with teacher's center → 1.0 × 1 = full score ✅
+Student pixel overlaps with teacher's edge → 0.3 × 1 = partial credit ⚠️
+Student pixel outside teacher entirely → 0.0 × 1 = zero score ❌
+Student pixel not present (no body there) → anything × 0 = doesn't count
+Then you take the mean of the student's mask pixels' scores.
+
+Why multiply instead of IoU? IoU is binary: overlap or not, one or zero. No in-between. With DTM multiplication:
+
+If the student's arm is 5 pixels off from the teacher's, IoU says "WRONG." DTM says "close enough, 0.85 score."
+If the student wears a baggy sleeve that extends 15px beyond the teacher's edge, IoU tanks. DTM barely notices because those extra edge pixels were already low-value in the teacher's heat map.
+Think of it like a dartboard — bull's-eye = full points, inner ring = good points, outer ring = some points, off the board = nothing.
+
+3. Optical Flow — Energy and Masking
+Why compute on the full frame, not just the mask?
+Farneback optical flow works by analyzing how neighborhoods of pixels move between frames. It uses a polynomial expansion that needs surrounding context to estimate motion. If you crop or zero-out everything outside the mask before computing flow:
+
+Pixels near the mask boundary see an artificial "edge" (body → black)
+The algorithm interprets this as motion (something appeared/disappeared)
+You get garbage vectors at every mask boundary
+Instead: compute flow on the full grayscale frame, then afterwards index into the flow field using the mask to extract only the dancer's motion vectors. The rest is discarded.
+
+What is "average magnitude"?
+The flow gives you a vector (dx, dy) for each pixel — how far and in what direction that pixel moved between frame N and frame N+1.
+
+Magnitude = sqrt(dx² + dy²) = the speed of that pixel (how many pixels it moved).
+
+Average magnitude within mask = take only the pixels where the dancer is, average their speeds. This single number tells you: "how much total movement happened in this frame?"
+
+Teacher hits a pop → average magnitude spikes to 15.0
+Student lazily slides into the pose → average magnitude is 4.0
+They look the same if you freeze at the end pose, but the energy is totally different
+What is "energy profile"?
+The energy profile is the time series of average mask magnitude across all frames:
+
+Frame:    [1,   2,   3,   4,   5,   6,   7,   8,   9,  10]
+Teacher:  [2.1, 3.4, 12.8, 1.2, 0.8, 15.3, 2.0, 1.1, 0.9, 11.5]
+Student:  [2.0, 3.1, 6.2,  1.5, 0.9, 7.8,  2.1, 1.0, 0.8, 5.9]
+You can see the teacher has sharp peaks (hits) but the student's peaks are half as strong — same moves, less power. We compare these profiles frame-by-frame using min/max ratio: min(teacher, student) / max(teacher, student). Same approach as your trajectory speed similarity.
+
+4. Farneback Algorithm
+Farneback (2003) is a dense optical flow algorithm, meaning it computes motion for every pixel (unlike Lucas-Kanade which only tracks sparse corner points).
+
+Core idea: It approximates each local image neighborhood as a quadratic polynomial:
+
+f(x) ≈ xᵀAx + bᵀx + c
+where A is a 2×2 matrix, b is a 2D vector, and c is a scalar. This polynomial describes the intensity surface of a small patch of the image.
+
+Between two frames: If a pixel moved by displacement d, then the polynomial's coefficients change in a predictable way. By computing how the coefficients 
+
+(A, b, c)
+ changed between frame 1 and frame 2, you can solve for d — the motion vector.
+
+The key parameters:
+
+pyr_scale=0.5 — Image pyramid. Each level is half the resolution of the previous. This helps detect large motions (a limb moving 50px) that would be missed if you only looked at fine detail.
+levels=3 — 3 pyramid levels: full res → half → quarter. Coarse levels catch big motions, fine levels refine them.
+winsize=15 — The polynomial is fit over a 15×15 pixel window. Larger = smoother/more robust but blurrier. Smaller = more detail but more noise.
+iterations=3 — Refine the estimate 3 times at each pyramid level.
+poly_n=5 — The polynomial is estimated from a 5×5 pixel neighborhood.
+poly_sigma=1.2 — Gaussian weight for the polynomial estimation. Pixels further from center have less influence.
+Why Farneback for dance masks?
+
+Dense → you get motion for every body pixel, not just corners
+Fast enough for 256×256 (~2ms per frame pair)
+The polynomial model handles smooth gradients inside the mask well (skin/fabric textures)
+Well-tested, deterministic, no GPU needed

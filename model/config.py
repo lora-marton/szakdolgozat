@@ -109,6 +109,23 @@ class ComparisonConfig:
         28: 0.02,   # R Ankle
     })
 
+    # Mask comparison: binarization
+    mask_binary_threshold: int = 128        # uint8 threshold for mask binarization
+
+    # Mask comparison: EFD contour smoothing
+    efd_harmonics: int = 8                  # number of Fourier harmonics (5–8 = clothing-robust)
+    efd_contour_points: int = 200           # points in the reconstructed contour
+
+    # Mask comparison: Distance Transform Mapping
+    dtm_sigma: float = 10.0                 # Gaussian decay width (pixels)
+
+    # Mask comparison: Optical Flow (Farneback)
+    flow_winsize: int = 15                  # averaging window size for Farneback
+
+    # Mask comparison: sub-weights (must sum to 1.0)
+    weight_shape: float = 0.60              # DTM shape score contribution
+    weight_energy: float = 0.40             # optical flow energy contribution
+
 
 @dataclass(frozen=True)
 class PreprocessorConfig:

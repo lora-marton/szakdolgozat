@@ -12,7 +12,7 @@ from model.config import DEFAULT_COMPARISON_CONFIG
 from model.preprocessing.preprocessor import preprocess
 from model.comparison.dtw import align_sequences
 from model.comparison.skeleton_metrics import compute_joint_angles, compute_cog, compare_angles, compare_cog
-from model.comparison.mask_metrics import compute_iou
+from model.comparison.mask_metrics import compute_mask_score
 from model.comparison.trajectory_metrics import compare_trajectories
 
 
@@ -86,8 +86,8 @@ def compare_dances(output_dir, teacher_video=None, student_video=None, config=No
     skeleton_score = config.weight_angles * angle_score + config.weight_cog * cog_score
 
     # --- Phase C: Mask Comparison ---
-    mask_score, per_frame_iou = compute_iou(aligned_teacher_masks, aligned_student_masks)
-    mask_score_pct = mask_score * 100  # Convert 0-1 to 0-100
+    mask_result = compute_mask_score(aligned_teacher_masks, aligned_student_masks, config)
+    mask_score_pct = mask_result['score']
 
     # --- Phase D: Trajectory Comparison ---
     trajectory_score, direction_similarity = compare_trajectories(
@@ -102,7 +102,7 @@ def compare_dances(output_dir, teacher_video=None, student_video=None, config=No
     )
 
     # --- Generate Feedback ---
-    feedback = _generate_feedback(worst_frames, direction_similarity, mask_score)
+    feedback = _generate_feedback(worst_frames, direction_similarity, mask_result)
 
     return {
         'overall_score': round(overall_score, 1),
@@ -112,6 +112,8 @@ def compare_dances(output_dir, teacher_video=None, student_video=None, config=No
         'timing_cost': round(timing_cost, 3),
         'alignment_path': alignment_path,
         'per_joint_scores': per_joint_scores,
+        'per_frame_shape': mask_result['per_frame_shape'],
+        'energy_details': mask_result['energy_details'],
         'feedback': feedback,
     }
 
@@ -139,12 +141,18 @@ def _load_session_data(output_dir, label):
     }
 
 
-def _generate_feedback(worst_frames, direction_similarity, mask_iou):
+def _generate_feedback(worst_frames, direction_similarity, mask_result):
     """Generate human-readable feedback from comparison results."""
     feedback = []
 
     # TODO: Implement rule-based feedback generation
-    # Based on worst_frames, direction_similarity, mask_iou
+    # Available data for feedback:
+    #   - worst_frames: list of (frame_idx, joint_name, error_degrees)
+    #   - direction_similarity: float 0-1 from trajectory
+    #   - mask_result['per_frame_shape']: array of DTM scores per frame
+    #   - mask_result['energy_details']['per_frame_ratios']: energy ratios
+    #   - mask_result['energy_details']['teacher_energy']: raw teacher energy
+    #   - mask_result['energy_details']['student_energy']: raw student energy
     feedback.append("Comparison complete. Detailed feedback coming soon.")
 
     return feedback

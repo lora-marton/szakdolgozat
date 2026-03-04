@@ -6,6 +6,7 @@ h5py
 dtw-python
 librosa
 scipy
+pyefd
 fastapi
 uvicorn[standard]
 python-multipart
