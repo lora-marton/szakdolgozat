@@ -26,9 +26,11 @@ dist/
 *.onnx
 
 # Data & Output
-output/
+data/
+uploaded_videos/
 videos/
 *.h5
+*.json
 *.mp4
 *.avi
 *.mov
