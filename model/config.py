@@ -126,6 +126,12 @@ class ComparisonConfig:
     weight_shape: float = 0.60              # DTM shape score contribution
     weight_energy: float = 0.40             # optical flow energy contribution
 
+    # Feedback generation thresholds
+    feedback_joint_warn_threshold: float = 70.0   # joint score below this triggers a warning
+    feedback_direction_warn_threshold: float = 0.7 # direction similarity below this triggers warning
+    feedback_mask_warn_threshold: float = 60.0     # mask score below this triggers warning
+    feedback_praise_threshold: float = 90.0        # component score above this gets positive note
+
 
 @dataclass(frozen=True)
 class PreprocessorConfig:

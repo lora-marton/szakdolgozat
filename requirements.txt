@@ -4,7 +4,7 @@ opencv-python
 numpy
 h5py
 dtw-python
-librosa
+moviepy
 scipy
 pyefd
 fastapi

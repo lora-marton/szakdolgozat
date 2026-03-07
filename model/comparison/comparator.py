@@ -101,9 +101,6 @@ def compare_dances(output_dir, teacher_video=None, student_video=None, config=No
         + config.weight_mask * mask_score_pct
     )
 
-    # --- Generate Feedback ---
-    feedback = _generate_feedback(worst_frames, direction_similarity, mask_result)
-
     return {
         'overall_score': round(overall_score, 1),
         'skeleton_score': round(skeleton_score, 1),
@@ -112,9 +109,9 @@ def compare_dances(output_dir, teacher_video=None, student_video=None, config=No
         'timing_cost': round(timing_cost, 3),
         'alignment_path': alignment_path,
         'per_joint_scores': per_joint_scores,
+        'worst_frames': worst_frames,
         'per_frame_shape': mask_result['per_frame_shape'],
         'energy_details': mask_result['energy_details'],
-        'feedback': feedback,
     }
 
 
@@ -141,18 +138,4 @@ def _load_session_data(output_dir, label):
     }
 
 
-def _generate_feedback(worst_frames, direction_similarity, mask_result):
-    """Generate human-readable feedback from comparison results."""
-    feedback = []
 
-    # TODO: Implement rule-based feedback generation
-    # Available data for feedback:
-    #   - worst_frames: list of (frame_idx, joint_name, error_degrees)
-    #   - direction_similarity: float 0-1 from trajectory
-    #   - mask_result['per_frame_shape']: array of DTM scores per frame
-    #   - mask_result['energy_details']['per_frame_ratios']: energy ratios
-    #   - mask_result['energy_details']['teacher_energy']: raw teacher energy
-    #   - mask_result['energy_details']['student_energy']: raw student energy
-    feedback.append("Comparison complete. Detailed feedback coming soon.")
-
-    return feedback

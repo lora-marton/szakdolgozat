@@ -1,15 +1,17 @@
-import { useEffect, useState, useRef } from "react"
-import Typography from "@mui/material/Typography"
-import Box from "@mui/material/Box"
-import Paper from "@mui/material/Paper"
+import { useEffect, useState, useRef } from 'react';
+import Box from '@mui/material/Box';
+import SseMessages from './SseMessages';
+import ResultsPanel from './ResultsPanel';
+import { getFeedback } from '../api/feedbackGetter';
+import type { FeedbackResponse } from '../api/feedbackGetter';
 
 const Feedback = () => {
-    const [message, setMessage] = useState<string>("")
+    const [messages, setMessages] = useState<string[]>([]);
+    const [results, setResults] = useState<FeedbackResponse | null>(null);
     const eventSource = useRef<EventSource | null>(null);
 
     useEffect(() => {
         // Connect to SSE endpoint
-        // Use 127.0.0.1 to match backend
         const es = new EventSource('http://127.0.0.1:8000/events');
         eventSource.current = es;
 
@@ -19,13 +21,18 @@ const Feedback = () => {
 
         es.onmessage = (event) => {
             console.log('Received SSE:', event.data);
-            setMessage(event.data);
+            setMessages((prev) => [...prev, event.data]);
+
+            // When backend signals feedback is ready, fetch the results
+            if (event.data === 'Feedback ready.') {
+                getFeedback()
+                    .then((data) => setResults(data))
+                    .catch((err) => console.error('Failed to fetch feedback:', err));
+            }
         };
 
         es.onerror = (error) => {
             console.error('SSE error:', error);
-            // EventSource automatically reconnects, but if we want to handle explicit errors:
-            // es.close(); 
         };
 
         return () => {
@@ -35,16 +42,11 @@ const Feedback = () => {
     }, []);
 
     return (
-        <Box sx={{ pt: 5, display: 'flex', justifyContent: 'center' }}>
-            {message && (
-                <Paper elevation={3} sx={{ p: 2, minWidth: 300, textAlign: 'center' }}>
-                    <Typography variant="body1">
-                        {message}
-                    </Typography>
-                </Paper>
-            )}
+        <Box sx={{ pt: 3, display: 'flex', flexDirection: 'column', gap: 2, maxWidth: 700, mx: 'auto' }}>
+            <SseMessages messages={messages} />
+            {results && <ResultsPanel results={results} />}
         </Box>
-    )
-}
+    );
+};
 
-export default Feedback
+export default Feedback;

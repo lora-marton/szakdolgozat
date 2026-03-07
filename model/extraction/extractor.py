@@ -150,4 +150,4 @@ def data_extraction(video_path, output_dir='data', label='dance', debug=False, s
 
 
 if __name__ == "__main__":
-    data_extraction('videos/dance1_teacher.mov', output_dir='data', label='dance', debug=True)
+    data_extraction('videos/d1_student4.mp4', output_dir='data', label='dance', debug=True)

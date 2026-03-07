@@ -1,11 +1,20 @@
 import os
+import sys
 import shutil
 from datetime import datetime
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from typing import List
+
+# Ensure project root is on path (so imports work regardless of launch method)
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(CURRENT_DIR)
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
 from model.video_processor import process_videos
+from controller.feedbackSender import save_results
 
 app = FastAPI()
 
@@ -19,12 +28,8 @@ app.add_middleware(
 )
 
 # Configure upload folder (root/uploaded_videos)
-# Get the directory of this script (controller/)
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-# Go up one level to root, then into uploaded_videos
-UPLOAD_FOLDER = os.path.join(os.path.dirname(CURRENT_DIR), 'uploaded_videos')
+UPLOAD_FOLDER = os.path.join(ROOT_DIR, 'uploaded_videos')
 
-# Ensure directory exists
 # Ensure directory exists
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
@@ -80,20 +85,31 @@ async def upload_files(teacher: UploadFile = File(...), student: UploadFile = Fi
         
         # Create a session-specific output directory
         session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = os.path.join(os.path.dirname(CURRENT_DIR), 'data', session_id)
+        output_dir = os.path.join(ROOT_DIR, 'data', session_id)
         
-        await process_videos(teacher_path, student_path, output_dir, sse_status_handler)
-        await sse_status_handler("Processing complete.")
-            
-        return {
-            "message": "Files uploaded successfully",
-            "teacher_path": teacher_path,
-            "student_path": student_path,
-            "output_dir": output_dir
-        }
+        results = await process_videos(teacher_path, student_path, output_dir, event_handler=sse_status_handler)
+
+        if results is not None:
+            # Persist results to disk for later retrieval via feedbackSender
+            save_results(session_id, results)
+            await sse_status_handler("Processing complete.")
+
+            return {
+                "message": "Files uploaded and processed successfully",
+                "session_id": session_id,
+                "overall_score": results.get("overall_score"),
+                "skeleton_score": results.get("skeleton_score"),
+                "trajectory_score": results.get("trajectory_score"),
+                "mask_score": results.get("mask_score"),
+                "feedback": results.get("feedback", []),
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Video processing failed.")
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     print(f"Starting server on http://localhost:8000/dance_videos")
     uvicorn.run(app, host="127.0.0.1", port=8000)
+

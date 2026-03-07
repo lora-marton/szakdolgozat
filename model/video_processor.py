@@ -1,14 +1,21 @@
 import os
 import asyncio
+import traceback
 from model.extraction.extractor import data_extraction
 from model.comparison.comparator import compare_dances
+from model.comparison.feedback import generate_feedback
+from model.config import DEFAULT_COMPARISON_CONFIG
 
 
-async def process_videos(teacher_file, student_file, output_dir='data', event_handler=None):
+async def process_videos(teacher_file, student_file, output_dir='data',
+                         config=None, event_handler=None):
     """
-    Process videos: extract poses, then compare teacher vs student.
+    Process videos: extract poses, compare teacher vs student, generate feedback.
     Runs heavy computation in threads to avoid blocking the async event loop.
     """
+    if config is None:
+        config = DEFAULT_COMPARISON_CONFIG
+
     async def send_status(msg):
         print(msg)
         if event_handler:
@@ -33,11 +40,18 @@ async def process_videos(teacher_file, student_file, output_dir='data', event_ha
         results = await asyncio.to_thread(
             compare_dances, output_dir,
             teacher_video=teacher_file, student_video=student_file,
+            config=config,
         )
         await send_status(f"Comparison complete. Overall score: {results['overall_score']}%")
+
+        # Phase 3: Feedback generation
+        await send_status("Generating feedback...")
+        results['feedback'] = generate_feedback(results, config)
+        await send_status("Feedback ready.")
 
         return results
 
     except Exception as e:
-        await send_status(f"Error processing videos: {e}")
+        traceback.print_exc()
+        await send_status(f"Error processing videos: {type(e).__name__}: {e}")
         return None
