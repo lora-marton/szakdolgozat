@@ -42,7 +42,7 @@ const Feedback = () => {
     }, []);
 
     return (
-        <Box sx={{ pt: 3, display: 'flex', flexDirection: 'column', gap: 2, maxWidth: 700, mx: 'auto' }}>
+        <Box sx={{ pt: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, maxWidth: 700, mx: 'auto' }}>
             <SseMessages messages={messages} />
             {results && <ResultsPanel results={results} />}
         </Box>

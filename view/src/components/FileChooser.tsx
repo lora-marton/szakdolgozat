@@ -17,14 +17,14 @@ const FileChooser = () => {
     };
 
     return (
-        <Grid container spacing={2} sx={{ p: 4, display: 'flex', justifyContent: 'center' }}>
-            <Grid size={{ xs: 8, md: 6 }}>
+        <Grid container spacing={2} sx={{ p: { xs: 1, md: 4 }, display: 'flex', justifyContent: 'center' }}>
+            <Grid size={{ xs: 12, md: 6 }}>
                 <Uploader person="Teacher" fileSetter={setTeacherFile} />
             </Grid>
-            <Grid size={{ xs: 8, md: 6 }}>
+            <Grid size={{ xs: 12, md: 6 }}>
                 <Uploader person="Student" fileSetter={setStudentFile} />
             </Grid>
-            <Grid size={8} sx={{ display: 'flex', justifyContent: 'center' }}>
+            <Grid size={{ xs: 12, md: 8 }} sx={{ display: 'flex', justifyContent: 'center' }}>
                 <Button variant="contained" size="large" onClick={handleSubmit}>
                     Submit
                 </Button>

@@ -81,8 +81,6 @@ async def upload_files(teacher: UploadFile = File(...), student: UploadFile = Fi
         async def sse_status_handler(message: str):
             await status_queue.put(message)
 
-        await sse_status_handler("Starting video processing...")
-        
         # Create a session-specific output directory
         session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_dir = os.path.join(ROOT_DIR, 'data', session_id)

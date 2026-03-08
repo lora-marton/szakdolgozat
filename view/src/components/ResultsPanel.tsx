@@ -1,6 +1,7 @@
 import {
     Box, Paper, Typography, LinearProgress, Divider, Chip, Fade,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import type { FeedbackResponse } from '../api/feedbackGetter';
@@ -12,7 +13,12 @@ interface ResultsPanelProps {
 // ── Score gauge (horizontal bar) ────────────────────────────────────────
 
 const ScoreBar = ({ label, value }: { label: string; value: number }) => {
-    const color = value >= 80 ? '#2e7d32' : value >= 60 ? '#ed6c02' : '#d32f2f';
+    const theme = useTheme();
+    const color = value >= 80
+        ? theme.palette.score.good
+        : value >= 60
+            ? theme.palette.score.ok
+            : theme.palette.score.bad;
 
     return (
         <Box sx={{ mb: 1.5 }}>
@@ -41,31 +47,51 @@ const ScoreBar = ({ label, value }: { label: string; value: number }) => {
 
 // ── Joint scores breakdown ──────────────────────────────────────────────
 
-const JointScores = ({ scores }: { scores: Record<string, number> }) => (
-    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
-        {Object.entries(scores)
-            .sort(([, a], [, b]) => a - b)
-            .map(([joint, score]) => {
-                const color = score >= 80 ? 'success' : score >= 60 ? 'warning' : 'error';
-                return (
-                    <Chip
-                        key={joint}
-                        label={`${joint}: ${score}%`}
-                        color={color}
-                        size="small"
-                        variant="outlined"
-                        sx={{ fontWeight: 500, textTransform: 'capitalize' }}
-                    />
-                );
-            })}
-    </Box>
-);
+const JointScores = ({ scores }: { scores: Record<string, number> }) => {
+    const theme = useTheme();
+
+    return (
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+            {Object.entries(scores)
+                .sort(([, a], [, b]) => a - b)
+                .map(([joint, score]) => {
+                    // Determine which score color applies
+                    const customColor = score >= 80
+                        ? theme.palette.score.good
+                        : score >= 60
+                            ? theme.palette.score.ok
+                            : theme.palette.score.bad;
+
+                    return (
+                        <Chip
+                            key={joint}
+                            label={`${joint}: ${score}%`}
+                            size="small"
+                            variant="outlined"
+                            sx={{
+                                fontWeight: 500,
+                                textTransform: 'capitalize',
+                                color: customColor,
+                                borderColor: customColor,
+                                // Add a tiny bit of background tint for richness
+                                bgcolor: '#bde2f3ff',
+                            }}
+                        />
+                    );
+                })}
+        </Box>
+    );
+};
 
 // ── Feedback message card ───────────────────────────────────────────────
 
 const FeedbackMessage = ({ message }: { message: string }) => {
+    const theme = useTheme();
     const isWarning = message.includes('⚠');
     const isPraise = message.includes('✓');
+
+    // Strip the leading emoji so we only show the MUI icon
+    const cleanMessage = message.replace(/^[⚠✓]\s*/, '');
 
     return (
         <Box
@@ -76,21 +102,21 @@ const FeedbackMessage = ({ message }: { message: string }) => {
                 p: 1.5,
                 borderRadius: 1,
                 bgcolor: isWarning
-                    ? 'rgba(237, 108, 2, 0.08)'
+                    ? theme.palette.feedbackCard.warningBg
                     : isPraise
-                        ? 'rgba(46, 125, 50, 0.08)'
-                        : 'rgba(0, 0, 0, 0.03)',
+                        ? theme.palette.feedbackCard.praiseBg
+                        : theme.palette.feedbackCard.neutralBg,
                 border: '1px solid',
                 borderColor: isWarning
-                    ? 'rgba(237, 108, 2, 0.3)'
+                    ? theme.palette.feedbackCard.warningBorder
                     : isPraise
-                        ? 'rgba(46, 125, 50, 0.3)'
-                        : 'rgba(0, 0, 0, 0.08)',
+                        ? theme.palette.feedbackCard.praiseBorder
+                        : theme.palette.feedbackCard.neutralBorder,
             }}
         >
-            {isWarning && <WarningAmberIcon sx={{ color: '#ed6c02', fontSize: 20, mt: 0.2 }} />}
-            {isPraise && <CheckCircleIcon sx={{ color: '#2e7d32', fontSize: 20, mt: 0.2 }} />}
-            <Typography variant="body2">{message}</Typography>
+            {isWarning && <WarningAmberIcon sx={{ color: theme.palette.score.ok, fontSize: 20, mt: 0.2 }} />}
+            {isPraise && <CheckCircleIcon sx={{ color: theme.palette.score.good, fontSize: 20, mt: 0.2 }} />}
+            <Typography variant="body2">{cleanMessage}</Typography>
         </Box>
     );
 };
@@ -98,11 +124,12 @@ const FeedbackMessage = ({ message }: { message: string }) => {
 // ── Main panel ──────────────────────────────────────────────────────────
 
 const ResultsPanel = ({ results }: ResultsPanelProps) => {
+    const theme = useTheme();
     const overallColor = results.overall_score >= 80
-        ? '#2e7d32'
+        ? theme.palette.score.good
         : results.overall_score >= 60
-            ? '#ed6c02'
-            : '#d32f2f';
+            ? theme.palette.score.ok
+            : theme.palette.score.bad;
 
     return (
         <Fade in timeout={600}>

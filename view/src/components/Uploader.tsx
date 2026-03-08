@@ -24,7 +24,7 @@ const Uploader = ({ person, fileSetter }: UploaderProps) => {
     };
 
     return (
-        <Box sx={{ p: 4, display: 'flex', justifyContent: 'center' }}>
+        <Box sx={{ p: { xs: 1, md: 4 }, display: 'flex', justifyContent: 'center' }}>
             <Paper
                 elevation={3}
                 sx={{
