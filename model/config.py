@@ -74,12 +74,12 @@ class ComparisonConfig:
 
     # Joint angle tolerance buffers (degrees) — style vs mistake
     joint_tolerances: dict = field(default_factory=lambda: {
-        'hips': 5.0,
-        'knees': 15.0,
-        'elbows': 20.0,
-        'wrists': 25.0,
-        'shoulders': 10.0,
-        'ankles': 15.0,
+        'hips': 10.0,
+        'knees': 20.0,
+        'elbows': 25.0,
+        'wrists': 30.0,
+        'shoulders': 15.0,
+        'ankles': 20.0,
     })
 
     # Joint angle definitions: (parent, joint, child) triplets
@@ -127,10 +127,10 @@ class ComparisonConfig:
     weight_energy: float = 0.40             # optical flow energy contribution
 
     # Feedback generation thresholds
-    feedback_joint_warn_threshold: float = 70.0   # joint score below this triggers a warning
-    feedback_direction_warn_threshold: float = 0.7 # direction similarity below this triggers warning
-    feedback_mask_warn_threshold: float = 60.0     # mask score below this triggers warning
-    feedback_praise_threshold: float = 90.0        # component score above this gets positive note
+    feedback_joint_warn_threshold: float = 60.0   # joint score below this triggers a warning
+    feedback_direction_warn_threshold: float = 0.6 # direction similarity below this triggers warning
+    feedback_mask_warn_threshold: float = 50.0     # mask score below this triggers warning
+    feedback_praise_threshold: float = 85.0        # component score above this gets positive note
 
 
 @dataclass(frozen=True)
