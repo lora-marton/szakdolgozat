@@ -11,7 +11,7 @@ import json
 from datetime import datetime
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 import uvicorn
 
 # Ensure project root is on path
@@ -117,6 +117,10 @@ async def get_feedback(session_id: str = Query(default=None)):
             detail=f"No results found for session '{session_id}'.",
         )
 
+    # Build video URL if the video file exists
+    video_file = os.path.join(DATA_DIR, session_id, 'feedback_video.mp4')
+    video_url = f"/feedback/video?session_id={session_id}" if os.path.isfile(video_file) else None
+
     # Return a frontend-friendly subset
     return JSONResponse(content={
         "session_id": session_id,
@@ -127,6 +131,7 @@ async def get_feedback(session_id: str = Query(default=None)):
         "timing_cost": results.get("timing_cost"),
         "per_joint_scores": results.get("per_joint_scores"),
         "feedback": results.get("feedback", []),
+        "feedback_video_url": video_url,
     })
 
 
@@ -153,6 +158,33 @@ async def get_detailed_feedback(session_id: str = Query(default=None)):
         "session_id": session_id,
         **results,
     })
+
+
+@app.get("/feedback/video")
+async def get_feedback_video(session_id: str = Query(default=None)):
+    """
+    Stream the feedback comparison video for a session.
+
+    Query params:
+        session_id: Optional — if omitted, uses the latest session.
+    """
+    if session_id is None:
+        session_id = _find_latest_session()
+        if session_id is None:
+            raise HTTPException(status_code=404, detail="No sessions found.")
+
+    video_path = os.path.join(DATA_DIR, session_id, 'feedback_video.mp4')
+    if not os.path.isfile(video_path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"No feedback video found for session '{session_id}'.",
+        )
+
+    return FileResponse(
+        video_path,
+        media_type='video/mp4',
+        filename='feedback_video.mp4',
+    )
 
 
 @app.get("/sessions")

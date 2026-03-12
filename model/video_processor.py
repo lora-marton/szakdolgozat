@@ -4,6 +4,7 @@ import traceback
 from model.extraction.extractor import data_extraction
 from model.comparison.comparator import compare_dances
 from model.comparison.feedback import generate_feedback
+from model.comparison.video_feedback import generate_feedback_video
 from model.config import DEFAULT_COMPARISON_CONFIG
 
 
@@ -48,6 +49,16 @@ async def process_videos(teacher_file, student_file, output_dir='data',
         await send_status("Generating feedback...")
         results['feedback'] = generate_feedback(results, config)
         await send_status("Feedback ready.")
+
+        # Phase 4: Feedback video generation
+        await send_status("Generating feedback video...")
+        video_path = await asyncio.to_thread(
+            generate_feedback_video,
+            teacher_file, student_file, output_dir,
+            results.get('preprocess_info'),
+        )
+        results['feedback_video'] = os.path.basename(video_path)
+        await send_status("Feedback video ready.")
 
         return results
 

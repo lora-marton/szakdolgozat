@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import Box from '@mui/material/Box';
 import SseMessages from './SseMessages';
 import ResultsPanel from './ResultsPanel';
+import VideoFeedback from './VideoFeedback';
 import { getFeedback } from '../api/feedbackGetter';
 import type { FeedbackResponse } from '../api/feedbackGetter';
 
@@ -24,7 +25,7 @@ const Feedback = () => {
             setMessages((prev) => [...prev, event.data]);
 
             // When backend signals feedback is ready, fetch the results
-            if (event.data === 'Feedback ready.') {
+            if (event.data === 'Feedback video ready.') {
                 getFeedback()
                     .then((data) => setResults(data))
                     .catch((err) => console.error('Failed to fetch feedback:', err));
@@ -44,9 +45,10 @@ const Feedback = () => {
     return (
         <Box sx={{ pt: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, maxWidth: 700, mx: 'auto' }}>
             <SseMessages messages={messages} />
+            {results?.feedback_video_url && <VideoFeedback videoUrl={results.feedback_video_url} />}
             {results && <ResultsPanel results={results} />}
         </Box>
     );
 };
 
-export default Feedback;
+export default Feedback;

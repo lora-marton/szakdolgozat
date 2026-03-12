@@ -25,8 +25,9 @@ def preprocess(teacher_data, student_data, teacher_video, student_video, config=
         config: PreprocessorConfig instance (uses defaults if None).
 
     Returns:
-        (teacher_data, student_data): Trimmed copies of both data dicts,
-            each containing only the frames within the shared active region.
+        (teacher_data, student_data, preprocess_info): Trimmed copies of both
+            data dicts, plus a dict with 'teacher_offset' and 'student_offset'
+            (number of frames trimmed from the start of each HDF5 sequence).
     """
     from model.config import DEFAULT_PREPROCESSOR_CONFIG
     if config is None:
@@ -48,6 +49,10 @@ def preprocess(teacher_data, student_data, teacher_video, student_video, config=
     # ------------------------------------------------------------------
     # Step 2: Apply offset — trim leading frames from the earlier video
     # ------------------------------------------------------------------
+    # Track how many frames are trimmed from each due to audio offset
+    teacher_audio_trim = offset if offset > 0 else 0
+    student_audio_trim = -offset if offset < 0 else 0
+
     teacher_data, student_data = _apply_offset(teacher_data, student_data, offset)
 
     # ------------------------------------------------------------------
@@ -63,8 +68,8 @@ def preprocess(teacher_data, student_data, teacher_video, student_video, config=
         s_energy, config.motion_threshold_ratio, config.min_active_duration,
     )
 
-    print(f"[Preprocessor] Teacher active range: frames {t_start}–{t_end}")
-    print(f"[Preprocessor] Student active range: frames {s_start}–{s_end}")
+    print(f"[Preprocessor] Teacher active range: frames {t_start}--{t_end}")
+    print(f"[Preprocessor] Student active range: frames {s_start}--{s_end}")
 
     # ------------------------------------------------------------------
     # Step 4: Intersection — keep only the overlapping active region
@@ -75,15 +80,27 @@ def preprocess(teacher_data, student_data, teacher_video, student_video, config=
     if shared_start >= shared_end:
         print("[Preprocessor] WARNING: No overlapping active region found. "
               "Skipping trimming.")
-        return teacher_data, student_data
+        preprocess_info = {
+            'audio_offset': offset,
+            'teacher_offset': teacher_audio_trim,
+            'student_offset': student_audio_trim,
+        }
+        return teacher_data, student_data, preprocess_info
 
-    print(f"[Preprocessor] Shared active region: frames {shared_start}–{shared_end} "
+    print(f"[Preprocessor] Shared active region: frames {shared_start}--{shared_end} "
           f"({shared_end - shared_start} frames)")
 
     teacher_data = _slice_data(teacher_data, shared_start, shared_end)
     student_data = _slice_data(student_data, shared_start, shared_end)
 
-    return teacher_data, student_data
+    # Total offset: audio trim + shared region trim
+    preprocess_info = {
+        'audio_offset': offset,
+        'teacher_offset': teacher_audio_trim + shared_start,
+        'student_offset': student_audio_trim + shared_start,
+    }
+
+    return teacher_data, student_data, preprocess_info
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────

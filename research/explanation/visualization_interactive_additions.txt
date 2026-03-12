@@ -1,0 +1,42 @@
+Phase 1: The Base Video (Option 1)
+Pre-rendered side-by-side skeleton overlay MP4 — simple <video> embed.
+
+Phase 2: Interactive Enhancements
+🎯 Jump-to-Worst-Moments
+You already compute worst_frames in your comparator. Add clickable markers on the video timeline that jump to the frames where the student made the biggest mistakes. Each marker could show a tooltip like "Left knee: 38% match".
+
+This is the easiest win — just a few buttons that call video.currentTime = timestamp.
+
+🎨 Joint Error Legend / Live Score Ticker
+As the video plays, show a live score panel beside it that updates in real-time with the current frame's per-joint scores. Think of it like sports commentary — the numbers change as the video progresses.
+
+You already have per-frame data (per_frame_shape, angle errors). Just sync it to video.ontimeupdate.
+
+🔀 Toggle Layers
+Let the student toggle visibility of different overlays:
+
+☑️ Student skeleton
+☑️ Teacher ghost skeleton
+☑️ Error heatmap (color-coded joints)
+☑️ Silhouette mask
+This requires moving from a single baked video to a Canvas overlay on top of the video, drawing skeletons from JSON keypoint data. This is the biggest jump in complexity but gives the most control.
+
+🔄 Slow-Mo on Problem Sections
+Automatically slow down playback (0.5x) during the worst sections, then resume normal speed. Or let the user manually set playback speed with a slider.
+
+Trivial to implement: video.playbackRate = 0.5.
+
+📊 Synced Timeline Chart
+Below the video, show a line chart (using something like Recharts, which works great with MUI) plotting the per-frame skeleton/mask/trajectory scores over time. A vertical cursor moves with the video. Clicking the chart jumps to that moment.
+
+You already have per_frame_shape and energy_details.per_frame_ratios — this is just visualization.
+
+Recommended Priority
+Priority	Feature				Effort		Impact
+1		Jump-to-worst-moments buttons	~1 hour		⭐⭐⭐⭐
+2		Live score ticker beside video	~2 hours	⭐⭐⭐
+3		Synced timeline chart		~3 hours	⭐⭐⭐⭐⭐
+4		Slow-mo on problem sections	~30 min		⭐⭐
+5		Toggle layers (Canvas overlay)	~1 day		⭐⭐⭐⭐⭐
+
+The first three are lightweight additions on top of the baked video. Toggle layers (Phase 2 → Option 2 territory) is the big leap, but you'd only do it if the simpler approach feels limiting.

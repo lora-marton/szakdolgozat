@@ -46,8 +46,9 @@ def compare_dances(output_dir, teacher_video=None, student_video=None, config=No
     student_data = _load_session_data(output_dir, 'student')
 
     # --- Phase 0: Preprocessing (sync + trim) ---
+    preprocess_info = {'teacher_offset': 0, 'student_offset': 0}
     if teacher_video and student_video:
-        teacher_data, student_data = preprocess(
+        teacher_data, student_data, preprocess_info = preprocess(
             teacher_data, student_data,
             teacher_video, student_video,
         )
@@ -112,6 +113,7 @@ def compare_dances(output_dir, teacher_video=None, student_video=None, config=No
         'worst_frames': worst_frames,
         'per_frame_shape': mask_result['per_frame_shape'],
         'energy_details': mask_result['energy_details'],
+        'preprocess_info': preprocess_info,
     }
 
 

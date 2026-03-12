@@ -1,0 +1,17 @@
+1. Increased Joint Angle Tolerances I increased the angle tolerances for all joints by 5 degrees. This means the model will provide more leeway before penalizing the skeleton score, directly improving the students' base scores:
+
+hips: 5.0° ➔ 10.0°
+knees: 15.0° ➔ 20.0°
+elbows: 20.0° ➔ 25.0°
+wrists: 25.0° ➔ 30.0°
+shoulders: 10.0° ➔ 15.0°
+ankles: 15.0° ➔ 20.0°
+
+
+2. Relaxed Feedback Generation Thresholds I lowered the thresholds that trigger warning messages so that students receive fewer warnings for minor deviations, and also lowered the threshold for receiving praise so they are rewarded more easily:
+
+feedback_joint_warn_threshold: 70.0 ➔ 60.0 (joint score below this triggers a warning)
+feedback_direction_warn_threshold: 0.7 ➔ 0.6 (trajectory similarity below this triggers a warning)
+feedback_mask_warn_threshold: 60.0 ➔ 50.0 (silhouette/mask score below this triggers a warning)
+feedback_praise_threshold: 90.0 ➔ 85.0 (component score above this now gets a positive note)
+The system should now feel noticeably more encouraging to the users. Let me know if you would like to adjust the exponential scoring falloff (angle_sigma and cog_sigma) or weights as well!

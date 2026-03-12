@@ -11,6 +11,7 @@ export interface FeedbackResponse {
     timing_cost: number;
     per_joint_scores: Record<string, number>;
     feedback: string[];
+    feedback_video_url: string | null;
 }
 
 export interface DetailedFeedbackResponse extends FeedbackResponse {
