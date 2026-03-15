@@ -11,6 +11,7 @@ export interface FeedbackResponse {
     timing_cost: number;
     per_joint_scores: Record<string, number>;
     feedback: string[];
+    timeline_markers: { time: number; label: string }[];
     feedback_video_url: string | null;
 }
 

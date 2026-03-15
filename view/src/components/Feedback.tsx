@@ -45,10 +45,15 @@ const Feedback = () => {
     return (
         <Box sx={{ pt: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, maxWidth: 700, mx: 'auto' }}>
             <SseMessages messages={messages} />
-            {results?.feedback_video_url && <VideoFeedback videoUrl={results.feedback_video_url} />}
+            {results?.feedback_video_url && (
+                <VideoFeedback
+                    videoUrl={results.feedback_video_url}
+                    timelineMarkers={results.timeline_markers}
+                />
+            )}
             {results && <ResultsPanel results={results} />}
         </Box>
     );
 };
 
-export default Feedback;
+export default Feedback;

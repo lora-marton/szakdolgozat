@@ -3,7 +3,7 @@ import asyncio
 import traceback
 from model.extraction.extractor import data_extraction
 from model.comparison.comparator import compare_dances
-from model.comparison.feedback import generate_feedback
+from model.comparison.feedback import generate_feedback, extract_timeline_markers
 from model.comparison.video_feedback import generate_feedback_video
 from model.config import DEFAULT_COMPARISON_CONFIG
 
@@ -48,6 +48,7 @@ async def process_videos(teacher_file, student_file, output_dir='data',
         # Phase 3: Feedback generation
         await send_status("Generating feedback...")
         results['feedback'] = generate_feedback(results, config)
+        results['timeline_markers'] = extract_timeline_markers(results, config)
         await send_status("Feedback ready.")
 
         # Phase 4: Feedback video generation

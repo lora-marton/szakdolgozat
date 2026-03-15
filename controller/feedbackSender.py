@@ -151,6 +151,7 @@ async def get_feedback(session_id: str = Query(default=None)):
         "timing_cost": results.get("timing_cost"),
         "per_joint_scores": results.get("per_joint_scores"),
         "feedback": results.get("feedback", []),
+        "timeline_markers": results.get("timeline_markers", []),
         "feedback_video_url": video_url,
     })
 

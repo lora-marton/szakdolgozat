@@ -1,4 +1,4 @@
-import { Box, Paper, Typography, Fade } from '@mui/material';
+import { Box, Paper, Typography, Fade, CircularProgress } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
 interface SseMessagesProps {
@@ -18,7 +18,7 @@ const SseMessages = ({ messages }: SseMessagesProps) => {
                 border: '1px solid',
                 borderColor: 'primary.main',
                 borderRadius: 2,
-                maxHeight: 250,
+                maxHeight: 300,
                 overflowY: 'auto',
                 width: '100%',
                 maxWidth: 350,
@@ -43,6 +43,14 @@ const SseMessages = ({ messages }: SseMessagesProps) => {
                         </Typography>
                     </Fade>
                 ))}
+
+                {!messages[messages.length - 1]?.includes('Processing complete.') && (
+                    <Fade in timeout={400}>
+                        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 1, mb: 1 }}>
+                            <CircularProgress size={20} sx={{ color: 'primary.main' }} />
+                        </Box>
+                    </Fade>
+                )}
             </Box>
         </Paper>
     );

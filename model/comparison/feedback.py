@@ -5,6 +5,7 @@ Analyses scores from the comparison pipeline and produces a prioritised
 list of plain-text messages — from high-level summary down to
 component-specific tips and positive reinforcement.
 """
+from model.config import DEFAULT_CONFIG
 
 
 def generate_feedback(results, config):
@@ -68,7 +69,68 @@ def generate_feedback(results, config):
     return feedback
 
 
+def extract_timeline_markers(results, config):
+    """
+    Extract timestamps for the worst frames to be used by the frontend video player.
+
+    Returns:
+        markers: List of dicts with 'time' (seconds) and 'label' (string).
+    """
+    worst_frames = results.get('worst_frames', [])
+    if not worst_frames:
+        return []
+
+    alignment = results.get('alignment_path', [])
+    preprocess_info = results.get('preprocess_info', {})
+    audio_offset = preprocess_info.get('audio_offset', 0)
+    student_offset = preprocess_info.get('student_offset', 0)
+    
+    teacher_fps = results.get('teacher_fps', 30.0)
+    student_fps = results.get('student_fps', 30.0)
+    source_fps = min(teacher_fps, student_fps)
+    target_fps = DEFAULT_CONFIG.target_fps
+    
+    scale = source_fps / target_fps
+    trim_frames = int(round(abs(audio_offset) * scale))
+    output_fps = 30.0
+
+    markers = []
+    
+    for i, (dtw_idx, joint_name, error_deg) in enumerate(worst_frames):
+        # worst_frames stores the index *within the alignment path* (!)
+        # Extract the preprocessed student index from the alignment path
+        if dtw_idx < len(alignment):
+            student_idx_preprocessed = alignment[dtw_idx][1]
+        else:
+            student_idx_preprocessed = alignment[-1][1]
+
+        # The video feedback uses RAW frames, so we must add the total trimming 
+        # applied to the student during the motion-energy preprocessing step.
+        raw_student_idx = student_idx_preprocessed + student_offset
+
+        # The feedback video *only* trims the audio_offset using trim_frames.
+        if audio_offset < 0:
+            # Student leads -> student was trimmed by trim_frames in the video loop
+            v = raw_student_idx - trim_frames
+        else:
+            # Teacher leads -> student was not trimmed
+            v = raw_student_idx
+            
+        # Ensure it's not before the video starts
+        if v < 0:
+            continue
+            
+        time_sec = v / output_fps
+        markers.append({
+            'time': round(time_sec, 2),
+            'label': f"⚠ {joint_name} (off by {error_deg}°)"
+        })
+
+    return markers
+
+
 # ── Helper rule functions ────────────────────────────────────────────────
+
 
 
 def _overall_summary(score):

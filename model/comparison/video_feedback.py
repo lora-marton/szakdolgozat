@@ -18,7 +18,7 @@ from model.config import DEFAULT_CONFIG
 
 def _draw_skeleton(frame, landmarks, connections, vid_w, vid_h,
                    line_color=(0, 255, 0), point_color=(0, 0, 255),
-                   line_thickness=4, point_radius=6):
+                   line_thickness=5, point_radius=7):
     """
     Draw a skeleton on a frame using normalized (0-1) landmarks.
 
@@ -243,25 +243,25 @@ def generate_feedback_video(teacher_video, student_video, output_dir,
         if i < len(teacher_lm):
             _draw_skeleton(
                 teacher_frame, teacher_lm[i], connections, t_w, t_h,
-                line_color=(193, 145, 63),
-                point_color=(193, 145, 63),
+                line_color=(255, 240, 0),
+                point_color=(255, 240, 0),
             )
 
         # Draw skeleton on student  (colours from view/src/theme.ts)
         if i < len(student_lm):
             _draw_skeleton(
                 student_frame, student_lm[i], connections, s_w, s_h,
-                line_color=(193, 145, 63),
-                point_color=(193, 145, 63),
+                line_color=(0, 255, 170),
+                point_color=(0, 255, 170),
             )
 
         # Draw ghost (teacher skeleton) on student's frame  (score.good #2a8c62)
         if i < len(teacher_lm):
             _draw_skeleton(
                 student_frame, teacher_lm[i], connections, s_w, s_h,
-                line_color=(0, 255, 170),
-                point_color=(0, 255, 170),
-                line_thickness=2, point_radius=4,
+                line_color=(255, 240, 0),
+                point_color=(255, 240, 0),
+                line_thickness=3, point_radius=5,
             )
 
         # Resize to common height

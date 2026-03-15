@@ -116,6 +116,8 @@ def compare_dances(output_dir, teacher_video=None, student_video=None, config=No
         'per_frame_shape': mask_result['per_frame_shape'],
         'energy_details': mask_result['energy_details'],
         'preprocess_info': preprocess_info,
+        'teacher_fps': teacher_data['fps'],
+        'student_fps': student_data['fps'],
     }
 
 
