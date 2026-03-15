@@ -93,6 +93,8 @@ def compare_dances(output_dir, teacher_video=None, student_video=None, config=No
     # --- Phase D: Trajectory Comparison ---
     trajectory_score, direction_similarity = compare_trajectories(
         aligned_teacher_traj, aligned_student_traj,
+        weight_direction=config.trajectory_weight_direction,
+        weight_speed=config.trajectory_weight_speed,
     )
 
     # --- Weighted Final Score ---

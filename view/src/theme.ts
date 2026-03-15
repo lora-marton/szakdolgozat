@@ -47,7 +47,7 @@ const theme = createTheme({
             contrastText: '#fffbffff',
         },
         secondary: {
-            main: '#2CBEC6',          // slightly deeper cyan
+            main: '#2cbec6ff',          // slightly deeper cyan
             contrastText: '#e0feff',
         },
         background: {
@@ -61,9 +61,9 @@ const theme = createTheme({
 
         // Semantic score colours — sit well on the light paper
         score: {
-            good: '#2a8c62ff',          // tealy green  (kept)
-            ok: '#c1913fff',            // muted coral  (replaces amber)
-            bad: '#c43a63ff',           // rosy red     (kept)
+            good: '#2a8c62ff',          // tealy green
+            ok: '#c1913fff',            // amber
+            bad: '#c43a63ff',           // rosy red
         },
 
         // Feedback card tints — converted to hex alpha based on the score colors

@@ -50,17 +50,17 @@ class ComparisonConfig:
     """Configuration for dance comparison scoring."""
 
     # Overall scoring weights (must sum to 1.0)
-    weight_skeleton: float = 0.50
-    weight_trajectory: float = 0.30
-    weight_mask: float = 0.20
+    weight_skeleton: float = 0.55
+    weight_trajectory: float = 0.15
+    weight_mask: float = 0.30
 
     # Skeleton sub-weights: angles vs CoG (must sum to 1.0)
     weight_angles: float = 0.80
     weight_cog: float = 0.20
 
     # Exponential decay parameters
-    angle_sigma: float = 25.0   # degrees — score ≈37% at tolerance + sigma
-    cog_sigma: float = 0.05    # normalized coords (0–1) — score ≈37% at this distance
+    angle_sigma: float = 35.0   # degrees
+    cog_sigma: float = 0.08    # normalized coords (0–1)
 
     # DTW: which joints to use for alignment (12 main joints)
     dtw_joints: tuple = (
@@ -74,12 +74,12 @@ class ComparisonConfig:
 
     # Joint angle tolerance buffers (degrees) — style vs mistake
     joint_tolerances: dict = field(default_factory=lambda: {
-        'hips': 10.0,
-        'knees': 20.0,
-        'elbows': 25.0,
-        'wrists': 30.0,
-        'shoulders': 15.0,
-        'ankles': 20.0,
+        'hips': 5.0,
+        'knees': 15.0,
+        'elbows': 20.0,
+        'wrists': 25.0,
+        'shoulders': 10.0,
+        'ankles': 15.0,
     })
 
     # Joint angle definitions: (parent, joint, child) triplets
@@ -113,24 +113,28 @@ class ComparisonConfig:
     mask_binary_threshold: int = 128        # uint8 threshold for mask binarization
 
     # Mask comparison: EFD contour smoothing
-    efd_harmonics: int = 8                  # number of Fourier harmonics (5–8 = clothing-robust)
+    efd_harmonics: int = 6                  # number of Fourier harmonics (5–8 = clothing-robust)
     efd_contour_points: int = 200           # points in the reconstructed contour
 
     # Mask comparison: Distance Transform Mapping
-    dtm_sigma: float = 10.0                 # Gaussian decay width (pixels)
+    dtm_sigma: float = 25.0                 # Gaussian decay width (pixels)
 
     # Mask comparison: Optical Flow (Farneback)
     flow_winsize: int = 15                  # averaging window size for Farneback
 
     # Mask comparison: sub-weights (must sum to 1.0)
-    weight_shape: float = 0.60              # DTM shape score contribution
-    weight_energy: float = 0.40             # optical flow energy contribution
+    weight_shape: float = 0.70              # DTM shape score contribution
+    weight_energy: float = 0.30             # optical flow energy contribution
+
+    # Trajectory comparison: sub-weights (must sum to 1.0)
+    trajectory_weight_direction: float = 0.75       # direction similarity contribution
+    trajectory_weight_speed: float = 0.25           # speed ratio contribution
 
     # Feedback generation thresholds
-    feedback_joint_warn_threshold: float = 60.0   # joint score below this triggers a warning
-    feedback_direction_warn_threshold: float = 0.6 # direction similarity below this triggers warning
-    feedback_mask_warn_threshold: float = 50.0     # mask score below this triggers warning
-    feedback_praise_threshold: float = 85.0        # component score above this gets positive note
+    feedback_joint_warn_threshold: float = 70.0   # joint score below this triggers a warning
+    feedback_direction_warn_threshold: float = 0.7 # direction similarity below this triggers warning
+    feedback_mask_warn_threshold: float = 60.0     # mask score below this triggers warning
+    feedback_praise_threshold: float = 80.0        # component score above this gets positive note
 
 
 @dataclass(frozen=True)

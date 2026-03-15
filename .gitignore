@@ -28,7 +28,6 @@ dist/
 # Data & Output
 data/
 uploaded_videos/
-videos/
 *.h5
 *.json
 *.mp4

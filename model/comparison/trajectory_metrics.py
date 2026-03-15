@@ -10,7 +10,7 @@ import numpy as np
 
 
 def compare_trajectories(teacher_trajectory, student_trajectory,
-                         weight_direction=0.75, weight_speed=0.25,
+                         weight_direction, weight_speed,
                          min_speed_threshold=1e-4):
     """
     Compare floor movement paths between teacher and student.
