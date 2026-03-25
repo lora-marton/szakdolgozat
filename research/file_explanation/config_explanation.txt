@@ -1,0 +1,175 @@
+config/ subpackage — Line-by-Line Explanation
+===============================================
+
+The config subpackage lives in model/config/ and contains three frozen dataclasses
+that hold all tunable parameters for the dance comparison pipeline. Each class is
+in its own file with a default instance. The __init__.py re-exports everything so
+existing imports like "from model.config import DEFAULT_CONFIG" still work.
+
+
+================================================================================
+extraction_config.py — ExtractionConfig
+================================================================================
+
+Lines 1–10: Imports
+---------------------
+- dataclass (from dataclasses): Decorator that auto-generates __init__, __repr__, etc.
+- mediapipe as mp: Google's pose estimation library — used in create_landmarker_options().
+
+Lines 12–13: Class Declaration
+---------------------------------
+- @dataclass(frozen=True): Makes instances immutable — fields can't be changed after creation.
+  This prevents accidental config mutation during a pipeline run.
+
+Lines 16: model_path
+- Path to the MediaPipe pose landmarker model file (.task format, ~30MB).
+
+Line 18: target_fps
+- Target frame rate for resampling both videos (60 FPS). Both teacher and student
+  videos are resampled to this rate so frame-to-frame comparisons are fair.
+
+Lines 20–22: Normalization
+- target_torso_px (40.0): Torso length in normalized pixel space. All poses are scaled
+  so the torso is exactly this length, making comparison size-independent. Small value
+  ensures raised arms still fit within the normalized frame.
+- target_mask_size (256, 256): Resolution of the segmentation mask in pixels.
+- norm_center (128, 128): Origin point for normalization — center of the 256x256 mask.
+
+Lines 24–26: Detection Confidence
+- min_pose_detection_confidence (0.8): Minimum confidence to accept a new pose detection.
+- min_pose_presence_confidence (0.8): Minimum confidence that a person is present.
+- min_tracking_confidence (0.8): Minimum confidence for frame-to-frame tracking.
+  All set to 0.8 = fairly strict, reduces false/jittery detections.
+
+Lines 28–29: One Euro Filter
+- filter_min_cutoff (1.0): Baseline smoothing frequency. Lower = more smoothing.
+- filter_beta (20.0): Speed coefficient — higher values allow less smoothing during
+  fast movements. Together these reduce landmark jitter while preserving fast motions.
+
+Lines 31–35: pose_connections
+- Tuple of (joint_a, joint_b) pairs defining skeleton bones for visualization.
+  Groups: arms (shoulder→elbow→wrist), torso (shoulders + hips), legs (hip→knee→ankle).
+
+Lines 37–46: create_landmarker_options()
+- Constructs a MediaPipe PoseLandmarkerOptions object using this config's values.
+- Sets running_mode to VIDEO (frame-by-frame with tracking between frames).
+- output_segmentation_masks=True enables the body silhouette mask output.
+- Returns: mp.tasks.vision.PoseLandmarkerOptions
+
+Line 49: DEFAULT_CONFIG
+- Pre-created ExtractionConfig instance with all default values.
+
+
+================================================================================
+comparison_config.py — ComparisonConfig
+================================================================================
+
+Lines 1–8: Imports
+---------------------
+- dataclass, field (from dataclasses): field is needed for mutable default values
+  (dicts), since dataclasses require default_factory for mutable types.
+
+Lines 10–12: Class Declaration
+---------------------------------
+- @dataclass(frozen=True): Same immutable pattern as ExtractionConfig.
+
+Lines 14–16: Overall Scoring Weights
+- weight_skeleton (0.55): 55% of the final score comes from skeleton comparison.
+- weight_trajectory (0.15): 15% from trajectory (movement path) comparison.
+- weight_mask (0.30): 30% from silhouette/mask comparison.
+  These three must sum to 1.0.
+
+Lines 18–19: Skeleton Sub-Weights
+- weight_angles (0.80): 80% of skeleton score from joint angle comparison.
+- weight_cog (0.20): 20% from center-of-gravity comparison.
+  These two must sum to 1.0.
+
+Lines 21–22: Exponential Decay Parameters
+- angle_sigma (35.0): Degrees. Controls how harshly angle errors are penalized.
+  A 35-degree error gives approximately 37% score (1/e). Larger = more lenient.
+- cog_sigma (0.08): Normalized coordinates (0–1 range). Same concept for
+  center-of-gravity distance.
+
+Lines 24–31: dtw_joints
+- The 12 main body joints used for Dynamic Time Warping alignment.
+  Shoulders (11,12), elbows (13,14), wrists (15,16),
+  hips (23,24), knees (25,26), ankles (27,28).
+  These joints capture the major body movements for temporal alignment.
+
+Lines 33–41: joint_tolerances
+- Per-joint-group tolerance buffers in degrees. Errors within this buffer
+  are considered personal style variation, not mistakes.
+  Uses field(default_factory=lambda: {...}) because dicts are mutable.
+  Wrists have the highest tolerance (25°) since arm endpoints vary most.
+  Hips have the lowest (5°) since hip alignment is critical for dance form.
+
+Lines 43–50: joint_angles
+- Joint angle definitions as (parent, joint, child) landmark triplets.
+  The angle is measured at the middle joint between the two outer joints.
+  Left/right elbows, knees, and shoulders = 6 angles total.
+
+Lines 52–66: cog_weights
+- Biomechanics-based body segment weights for computing center of gravity.
+  Hips carry the most weight (0.15 each) as the body's center of mass.
+  Wrists/ankles the least (0.02 each). Weights approximate real body proportions.
+
+Line 68: mask_binary_threshold
+- uint8 threshold (128) for converting grayscale segmentation mask to binary (0/255).
+
+Lines 70–71: EFD (Elliptic Fourier Descriptors)
+- efd_harmonics (6): Number of Fourier harmonics for contour smoothing.
+  5–8 harmonics capture body shape while ignoring clothing wrinkles.
+- efd_contour_points (200): Number of points in the reconstructed smooth contour.
+
+Line 73: dtm_sigma
+- Distance Transform Mapping decay width (25 pixels). Controls how sharply
+  misaligned silhouette regions are penalized. Smaller = harsher.
+
+Line 75: flow_winsize
+- Farneback optical flow averaging window size (15 pixels).
+  Used to measure motion energy from the silhouette mask.
+
+Lines 77–78: Mask Sub-Weights
+- weight_shape (0.70): 70% of mask score from DTM shape comparison.
+- weight_energy (0.30): 30% from optical flow motion energy comparison.
+
+Lines 80–81: Trajectory Sub-Weights
+- trajectory_weight_direction (0.75): 75% from direction similarity.
+- trajectory_weight_speed (0.25): 25% from speed ratio.
+
+Lines 83–86: Feedback Thresholds
+- feedback_joint_warn_threshold (70.0): Joint scores below 70% trigger a warning.
+- feedback_direction_warn_threshold (0.7): Direction similarity below 0.7 triggers warning.
+- feedback_mask_warn_threshold (60.0): Mask scores below 60% trigger a warning.
+- feedback_praise_threshold (80.0): Component scores above 80% get positive feedback.
+
+Line 89: DEFAULT_COMPARISON_CONFIG
+- Pre-created ComparisonConfig instance with all default values.
+
+
+================================================================================
+preprocessor_config.py — PreprocessorConfig
+================================================================================
+
+Lines 1–7: Imports
+---------------------
+- dataclass (from dataclasses): Same decorator pattern.
+
+Lines 9–11: Class Declaration
+---------------------------------
+- @dataclass(frozen=True): Immutable config, same pattern.
+
+Line 13: audio_sample_rate
+- Sample rate for audio cross-correlation (22050 Hz).
+  Standard audio sample rate. Used when syncing teacher and student audio tracks
+  to find the temporal offset between the two videos.
+
+Lines 15–16: Motion Energy Thresholds
+- motion_threshold_ratio (0.15): Fraction of maximum motion energy to count as
+  "active" movement. Frames below 15% of peak energy are considered idle.
+- min_active_duration (10): Minimum consecutive active frames required.
+  Short bursts of motion below 10 frames are ignored as noise.
+  Together these trim the idle start/end from both videos.
+
+Line 19: DEFAULT_PREPROCESSOR_CONFIG
+- Pre-created PreprocessorConfig instance with all default values.
