@@ -5,7 +5,7 @@ Tests several scenarios with synthetic comparison results to ensure
 the rule-based feedback generator produces expected messages.
 """
 import numpy as np
-from model.comparison.feedback import generate_feedback
+from model.feedback.feedback import generate_feedback
 from model.config import DEFAULT_COMPARISON_CONFIG
 
 

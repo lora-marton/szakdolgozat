@@ -10,8 +10,8 @@ import traceback
 from typing import Callable, Awaitable
 
 from model.comparison.comparator import compare_dances
-from model.comparison.feedback import extract_timeline_markers, generate_feedback
-from model.comparison.video_feedback import generate_feedback_video
+from model.feedback.feedback import extract_timeline_markers, generate_feedback
+from model.feedback.video_feedback import generate_feedback_video
 from model.config import DEFAULT_COMPARISON_CONFIG
 from model.config.comparison_config import ComparisonConfig
 from model.extraction.extractor import data_extraction

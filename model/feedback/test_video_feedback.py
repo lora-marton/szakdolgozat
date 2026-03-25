@@ -18,7 +18,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-from model.comparison.video_feedback import generate_feedback_video
+from model.feedback.video_feedback import generate_feedback_video
 
 
 def _create_synthetic_video(path, num_frames=30, width=320, height=240, fps=30.0,
