@@ -7,42 +7,47 @@ Uses FastAPI with CORS, matching the pattern of fileGetter.py.
 """
 import asyncio
 from contextlib import asynccontextmanager
-import os
-import signal
-import sys
 import json
-from datetime import datetime
+import os
+import sys
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 import uvicorn
 
-# Ensure project root is on path
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(CURRENT_DIR)
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Handle application startup and shutdown lifecycle.
+
+    On Windows, resets SIGINT to default so Ctrl+C stops the server
+    and suppresses spurious ConnectionResetError from the Proactor loop.
+    """
     import sys
     if sys.platform == "win32":
-        # Allow Ctrl+C to actually stop the server on Windows
         import signal
         signal.signal(signal.SIGINT, signal.SIG_DFL)
-        
+
         loop = asyncio.get_running_loop()
+
         def _suppress_proactor_errors(loop, context):
             exception = context.get("exception")
             if isinstance(exception, ConnectionResetError):
                 return
             loop.default_exception_handler(context)
+
         loop.set_exception_handler(_suppress_proactor_errors)
     yield
 
+
 app = FastAPI(lifespan=lifespan)
 
-# Configure CORS (same as fileGetter.py)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -51,72 +56,55 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Storage directory for results (root/data/)
 DATA_DIR = os.path.join(ROOT_DIR, 'data')
 
 
-def _find_latest_session():
-    """Find the most recent session directory inside data/."""
-    if not os.path.isdir(DATA_DIR):
-        return None
-    sessions = sorted(
-        [d for d in os.listdir(DATA_DIR)
-         if os.path.isdir(os.path.join(DATA_DIR, d))],
-        reverse=True,
-    )
-    return sessions[0] if sessions else None
+class FeedbackSender:
+    """Groups feedback data-access logic: locating sessions
+    and loading results JSON."""
 
+    @staticmethod
+    def find_latest_session() -> str | None:
+        """Find the most recent session directory inside data/.
 
-def _load_results(session_id):
-    """Load the results JSON for a given session."""
-    results_path = os.path.join(DATA_DIR, session_id, 'results.json')
-    if not os.path.isfile(results_path):
-        return None
-    with open(results_path, 'r', encoding='utf-8') as f:
-        return json.load(f)
+        Returns:
+            The session directory name, or None if no sessions exist.
+        """
+        if not os.path.isdir(DATA_DIR):
+            return None
+        sessions = sorted(
+            [d for d in os.listdir(DATA_DIR)
+             if os.path.isdir(os.path.join(DATA_DIR, d))],
+            reverse=True,
+        )
+        return sessions[0] if sessions else None
 
+    @staticmethod
+    def load_results(session_id: str) -> dict | None:
+        """Load the results JSON for a given session.
 
-def save_results(session_id, results):
-    """
-    Persist comparison results to disk as JSON.
+        Args:
+            session_id: Session directory name (e.g. '20260306_134500').
 
-    Called by fileGetter after process_videos completes.
-    Converts numpy arrays to lists for JSON serialization.
+        Returns:
+            Parsed dict from results.json, or None if the file does not exist.
+        """
+        results_path = os.path.join(DATA_DIR, session_id, 'results.json')
+        if not os.path.isfile(results_path):
+            return None
+        with open(results_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
 
-    Args:
-        session_id: Session directory name (e.g. '20260306_134500').
-        results: Dict returned by process_videos (with feedback attached).
-    """
-    import numpy as np
-
-    session_dir = os.path.join(DATA_DIR, session_id)
-    os.makedirs(session_dir, exist_ok=True)
-
-    # Make results JSON-serializable (convert numpy arrays)
-    serializable = {}
-    for key, value in results.items():
-        if isinstance(value, np.ndarray):
-            serializable[key] = value.tolist()
-        elif isinstance(value, dict):
-            serializable[key] = {
-                k: v.tolist() if isinstance(v, np.ndarray) else v
-                for k, v in value.items()
-            }
-        else:
-            serializable[key] = value
-
-    results_path = os.path.join(session_dir, 'results.json')
-    with open(results_path, 'w', encoding='utf-8') as f:
-        json.dump(serializable, f, indent=2)
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────
 
 
 @app.get("/feedback")
-async def get_feedback(session_id: str = Query(default=None)):
-    """
-    Retrieve comparison feedback for a session.
+async def get_feedback(
+    session_id: str | None = Query(default=None),
+) -> JSONResponse:
+    """Retrieve comparison feedback for a session.
 
     Query params:
         session_id: Optional — if omitted, returns the latest session.
@@ -126,22 +114,24 @@ async def get_feedback(session_id: str = Query(default=None)):
         mask_score, per_joint_scores, feedback messages, etc.
     """
     if session_id is None:
-        session_id = _find_latest_session()
+        session_id = FeedbackSender.find_latest_session()
         if session_id is None:
             raise HTTPException(status_code=404, detail="No sessions found.")
 
-    results = _load_results(session_id)
+    results = FeedbackSender.load_results(session_id)
     if results is None:
         raise HTTPException(
             status_code=404,
             detail=f"No results found for session '{session_id}'.",
         )
 
-    # Build video URL if the video file exists
     video_file = os.path.join(DATA_DIR, session_id, 'feedback_video.mp4')
-    video_url = f"/feedback/video?session_id={session_id}" if os.path.isfile(video_file) else None
+    video_url = (
+        f"/feedback/video?session_id={session_id}"
+        if os.path.isfile(video_file)
+        else None
+    )
 
-    # Return a frontend-friendly subset
     return JSONResponse(content={
         "session_id": session_id,
         "overall_score": results.get("overall_score"),
@@ -157,18 +147,19 @@ async def get_feedback(session_id: str = Query(default=None)):
 
 
 @app.get("/feedback/detailed")
-async def get_detailed_feedback(session_id: str = Query(default=None)):
-    """
-    Retrieve full comparison results including per-frame data.
+async def get_detailed_feedback(
+    session_id: str | None = Query(default=None),
+) -> JSONResponse:
+    """Retrieve full comparison results including per-frame data.
 
     Useful for visualisation / charting on the frontend.
     """
     if session_id is None:
-        session_id = _find_latest_session()
+        session_id = FeedbackSender.find_latest_session()
         if session_id is None:
             raise HTTPException(status_code=404, detail="No sessions found.")
 
-    results = _load_results(session_id)
+    results = FeedbackSender.load_results(session_id)
     if results is None:
         raise HTTPException(
             status_code=404,
@@ -182,15 +173,16 @@ async def get_detailed_feedback(session_id: str = Query(default=None)):
 
 
 @app.get("/feedback/video")
-async def get_feedback_video(session_id: str = Query(default=None)):
-    """
-    Stream the feedback comparison video for a session.
+async def get_feedback_video(
+    session_id: str | None = Query(default=None),
+) -> FileResponse:
+    """Stream the feedback comparison video for a session.
 
     Query params:
         session_id: Optional — if omitted, uses the latest session.
     """
     if session_id is None:
-        session_id = _find_latest_session()
+        session_id = FeedbackSender.find_latest_session()
         if session_id is None:
             raise HTTPException(status_code=404, detail="No sessions found.")
 
@@ -209,7 +201,7 @@ async def get_feedback_video(session_id: str = Query(default=None)):
 
 
 @app.get("/sessions")
-async def list_sessions():
+async def list_sessions() -> JSONResponse:
     """List all available session IDs."""
     if not os.path.isdir(DATA_DIR):
         return JSONResponse(content={"sessions": []})

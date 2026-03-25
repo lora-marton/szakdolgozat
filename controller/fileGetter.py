@@ -1,24 +1,31 @@
-import os
-import sys
-import shutil
-from datetime import datetime
-from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
-from typing import List
+"""
+File upload endpoint.
 
-# Ensure project root is on path (so imports work regardless of launch method)
+Provides a POST endpoint to upload teacher and student dance videos,
+run the comparison pipeline, and return feedback results.
+Uses FastAPI with CORS and Server-Sent Events for real-time progress.
+"""
+import asyncio
+import json
+import os
+import shutil
+import sys
+from datetime import datetime
+
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+import uvicorn
+
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(CURRENT_DIR)
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 from model.video_processor import process_videos
-from controller.feedbackSender import save_results
 
 app = FastAPI()
 
-# Configure CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -27,69 +34,106 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configure upload folder (root/uploaded_videos)
 UPLOAD_FOLDER = os.path.join(ROOT_DIR, 'uploaded_videos')
+DATA_DIR = os.path.join(ROOT_DIR, 'data')
 
-# Ensure directory exists
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
-import asyncio
-from fastapi.responses import StreamingResponse
-
-# Global event queue for broadcasting
-# In a real app this might be a list of queues (one per client)
-start_event = asyncio.Event()
 status_queue = asyncio.Queue()
 
-async def event_generator():
-    """
-    Yields events to the client.
-    Initial state: waiting for start signal.
-    """
-    while True:
-        # Check if we have messages in the queue
-        try:
-            # Wait for a message with a timeout so we can send keep-alive comments
-            message = await asyncio.wait_for(status_queue.get(), timeout=1.0)
-            yield f"data: {message}\n\n"
-        except asyncio.TimeoutError:
-            # Send a comment to keep the connection alive
-            yield ": keep-alive\n\n"
+
+class FileGetter:
+    """Groups file handling and result persistence logic."""
+
+    @staticmethod
+    def save_results(session_id: str, results: dict) -> None:
+        """Persist comparison results to disk as JSON.
+
+        Converts numpy arrays to lists for JSON serialization.
+
+        Args:
+            session_id: Session directory name (e.g. '20260306_134500').
+            results: Dict returned by process_videos (with feedback attached).
+        """
+        import numpy as np
+
+        session_dir = os.path.join(DATA_DIR, session_id)
+        os.makedirs(session_dir, exist_ok=True)
+
+        serializable = {}
+        for key, value in results.items():
+            if isinstance(value, np.ndarray):
+                serializable[key] = value.tolist()
+            elif isinstance(value, dict):
+                serializable[key] = {
+                    k: v.tolist() if isinstance(v, np.ndarray) else v
+                    for k, v in value.items()
+                }
+            else:
+                serializable[key] = value
+
+        results_path = os.path.join(session_dir, 'results.json')
+        with open(results_path, 'w', encoding='utf-8') as f:
+            json.dump(serializable, f, indent=2)
+
+    @staticmethod
+    async def event_generator():
+        """Yield Server-Sent Events to the client.
+
+        Sends queued status messages or keep-alive comments.
+        """
+        while True:
+            try:
+                message = await asyncio.wait_for(status_queue.get(), timeout=1.0)
+                yield f"data: {message}\n\n"
+            except asyncio.TimeoutError:
+                yield ": keep-alive\n\n"
+
+
+# ── Endpoints ────────────────────────────────────────────────────────────
+
 
 @app.get("/events")
-async def events():
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+async def events() -> StreamingResponse:
+    """Stream server-sent events to the client."""
+    return StreamingResponse(FileGetter.event_generator(), media_type="text/event-stream")
 
 
 @app.post("/dance_videos")
-async def upload_files(teacher: UploadFile = File(...), student: UploadFile = File(...)):
+async def upload_files(
+    teacher: UploadFile = File(...),
+    student: UploadFile = File(...),
+) -> dict:
+    """Upload teacher and student dance videos, process and compare them.
+
+    Args:
+        teacher: The reference dance video file.
+        student: The student's dance video file.
+
+    Returns:
+        Dict with session_id, scores, and feedback.
+    """
     try:
-        # Define paths
         teacher_path = os.path.join(UPLOAD_FOLDER, teacher.filename)
         student_path = os.path.join(UPLOAD_FOLDER, student.filename)
-        
-        # Save teacher file
+
         with open(teacher_path, "wb") as buffer:
             shutil.copyfileobj(teacher.file, buffer)
-            
-        # Save student file
+
         with open(student_path, "wb") as buffer:
             shutil.copyfileobj(student.file, buffer)
 
-        # Event handler bridging function
-        async def sse_status_handler(message: str):
+        async def sse_status_handler(message: str) -> None:
             await status_queue.put(message)
 
-        # Create a session-specific output directory
         session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_dir = os.path.join(ROOT_DIR, 'data', session_id)
-        
+
         results = await process_videos(teacher_path, student_path, output_dir, event_handler=sse_status_handler)
 
         if results is not None:
-            # Persist results to disk for later retrieval via feedbackSender
-            save_results(session_id, results)
+            FileGetter.save_results(session_id, results)
             await sse_status_handler("Processing complete.")
 
             return {
@@ -107,7 +151,7 @@ async def upload_files(teacher: UploadFile = File(...), student: UploadFile = Fi
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-if __name__ == "__main__":
-    print(f"Starting server on http://localhost:8000/dance_videos")
-    uvicorn.run(app, host="127.0.0.1", port=8000)
 
+if __name__ == "__main__":
+    print("Starting server on http://localhost:8000/dance_videos")
+    uvicorn.run(app, host="127.0.0.1", port=8000)
