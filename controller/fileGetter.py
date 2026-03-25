@@ -22,7 +22,7 @@ ROOT_DIR = os.path.dirname(CURRENT_DIR)
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-from model.video_processor import process_videos
+from model.video_processor import VideoProcessor
 
 app = FastAPI()
 
@@ -130,7 +130,7 @@ async def upload_files(
         session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_dir = os.path.join(ROOT_DIR, 'data', session_id)
 
-        results = await process_videos(teacher_path, student_path, output_dir, event_handler=sse_status_handler)
+        results = await VideoProcessor.process_videos(teacher_path, student_path, output_dir, event_handler=sse_status_handler)
 
         if results is not None:
             FileGetter.save_results(session_id, results)
