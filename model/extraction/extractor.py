@@ -15,7 +15,7 @@ import numpy as np
 from model.config import DEFAULT_EXTRACTION_CONFIG
 from model.config.extraction_config import ExtractionConfig
 from model.extraction.frame_processor import FrameProcessor
-from model.extraction.visualization import draw_skeleton, draw_mask_overlay
+from model.extraction.visualization import Visualization
 
 
 class Extractor:
@@ -183,8 +183,8 @@ class Extractor:
             vid_h: Video frame height in pixels.
         """
         segmentation_mask = result.segmentation_masks[0].numpy_view()
-        overlay = draw_mask_overlay(frame, segmentation_mask)
-        overlay = draw_skeleton(overlay, landmarks, config.pose_connections, vid_w, vid_h)
+        overlay = Visualization.draw_mask_overlay(frame, segmentation_mask)
+        overlay = Visualization.draw_skeleton(overlay, landmarks, config.pose_connections, vid_w, vid_h)
         cv2.imshow('Main View (Skeleton + Mask)', overlay)
         cv2.imshow('Follow-Cam View (Centered)', norm_mask)
 
