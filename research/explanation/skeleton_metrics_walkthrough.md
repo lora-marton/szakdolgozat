@@ -335,7 +335,7 @@ class ComparisonConfig:
 
 
 # Default config instances
-DEFAULT_CONFIG = ExtractionConfig()
+DEFAULT_EXTRACTION_CONFIG = ExtractionConfig()
 DEFAULT_COMPARISON_CONFIG = ComparisonConfig()
 
 ===
@@ -464,7 +464,7 @@ class PreprocessorConfig:
 
 
 # Default config instances
-DEFAULT_CONFIG = ExtractionConfig()
+DEFAULT_EXTRACTION_CONFIG = ExtractionConfig()
 DEFAULT_PREPROCESSOR_CONFIG = PreprocessorConfig()
 DEFAULT_COMPARISON_CONFIG = ComparisonConfig()
 

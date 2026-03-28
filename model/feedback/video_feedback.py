@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 import h5py
 
-from model.config import DEFAULT_CONFIG
+from model.config import DEFAULT_EXTRACTION_CONFIG
 
 
 # ── Skeleton drawing helpers ─────────────────────────────────────────────
@@ -156,13 +156,13 @@ def generate_feedback_video(teacher_video, student_video, output_dir,
                      output video will be saved.
         preprocess_info: Dict with 'audio_offset' (frames, positive = teacher
                          leads). If None, no offset is applied.
-        config: ExtractionConfig instance (uses DEFAULT_CONFIG if None).
+        config: ExtractionConfig instance (uses DEFAULT_EXTRACTION_CONFIG if None).
 
     Returns:
         output_path: Path to the generated MP4 file.
     """
     if config is None:
-        config = DEFAULT_CONFIG
+        config = DEFAULT_EXTRACTION_CONFIG
     if preprocess_info is None:
         preprocess_info = {'audio_offset': 0}
 

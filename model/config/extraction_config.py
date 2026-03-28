@@ -46,4 +46,4 @@ class ExtractionConfig:
         )
 
 
-DEFAULT_CONFIG = ExtractionConfig()
+DEFAULT_EXTRACTION_CONFIG = ExtractionConfig()

@@ -5,7 +5,7 @@ Analyses scores from the comparison pipeline and produces a prioritised
 list of plain-text messages — from high-level summary down to
 component-specific tips and positive reinforcement.
 """
-from model.config import DEFAULT_CONFIG, DEFAULT_FEEDBACK_CONFIG
+from model.config import DEFAULT_EXTRACTION_CONFIG, DEFAULT_FEEDBACK_CONFIG
 
 
 def generate_feedback(results, config=None):
@@ -91,7 +91,7 @@ def extract_timeline_markers(results):
     teacher_fps = results.get('teacher_fps', 30.0)
     student_fps = results.get('student_fps', 30.0)
     source_fps = min(teacher_fps, student_fps)
-    target_fps = DEFAULT_CONFIG.target_fps
+    target_fps = DEFAULT_EXTRACTION_CONFIG.target_fps
     
     scale = source_fps / target_fps
     trim_frames = int(round(abs(audio_offset) * scale))

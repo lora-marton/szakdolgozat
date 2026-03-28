@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 import h5py
 
-from model.config import DEFAULT_CONFIG
+from model.config import DEFAULT_EXTRACTION_CONFIG
 from model.extraction.one_euro_filter import OneEuroFilter
 from model.extraction.normalizer import get_torso_stats, calibrate_scale, compute_follow_cam, warp_mask
 from model.extraction.visualization import draw_skeleton, draw_mask_overlay
@@ -20,10 +20,10 @@ def data_extraction(video_path, output_dir='data', label='dance', debug=False, s
         label: Prefix for output filenames (e.g., 'teacher', 'student').
         debug: If True, show OpenCV debug windows.
         status_callback: Optional callback(msg: str) for progress updates.
-        config: ExtractionConfig instance (uses DEFAULT_CONFIG if None).
+        config: ExtractionConfig instance (uses DEFAULT_EXTRACTION_CONFIG if None).
     """
     if config is None:
-        config = DEFAULT_CONFIG
+        config = DEFAULT_EXTRACTION_CONFIG
 
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, f'{label}_data.h5')

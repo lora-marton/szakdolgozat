@@ -4,7 +4,7 @@ config/ subpackage — Line-by-Line Explanation
 The config subpackage lives in model/config/ and contains three frozen dataclasses
 that hold all tunable parameters for the dance comparison pipeline. Each class is
 in its own file with a default instance. The __init__.py re-exports everything so
-existing imports like "from model.config import DEFAULT_CONFIG" still work.
+existing imports like "from model.config import DEFAULT_EXTRACTION_CONFIG" still work.
 
 
 ================================================================================
@@ -56,7 +56,7 @@ Lines 37–46: create_landmarker_options()
 - output_segmentation_masks=True enables the body silhouette mask output.
 - Returns: mp.tasks.vision.PoseLandmarkerOptions
 
-Line 49: DEFAULT_CONFIG
+Line 49: DEFAULT_EXTRACTION_CONFIG
 - Pre-created ExtractionConfig instance with all default values.
 
 
