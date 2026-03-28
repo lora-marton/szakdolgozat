@@ -137,3 +137,8 @@ service layer example: https://dev.to/alexis_jean/organize-your-code-with-the-se
 
 
 
+one euro filter:
+
+https://gery.casiez.net/1euro/
+
+https://dl.acm.org/doi/10.1145/2207676.2208639

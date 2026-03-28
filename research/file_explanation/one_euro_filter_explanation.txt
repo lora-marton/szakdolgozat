@@ -1,0 +1,129 @@
+one_euro_filter.py — Line-by-Line Explanation
+================================================
+
+This file implements the One Euro Filter, an adaptive low-pass filter
+designed for real-time noisy signals. It was introduced by Géry Casiez,
+Nicolas Roussel, and Daniel Vogel at CHI 2012. The key idea is that the
+filter adapts its smoothing strength based on signal speed: heavy smoothing
+when the signal is still (removes jitter), light smoothing when moving fast
+(reduces lag). In this project, each of the 33 MediaPipe landmarks gets
+three instances (x, y, z) — 99 filters total per video.
+
+Reference paper:
+  Casiez, G., Roussel, N., and Vogel, D. "1€ Filter: A Simple Speed-based
+  Low-pass Filter for Noisy Input in Interactive Systems." Proceedings of
+  CHI '12, pp. 2527–2530, Austin, Texas, May 2012. ACM Press.
+
+Official page: https://gery.casiez.net/1euro/
+
+
+Lines 1–8: Module Docstring
+-----------------------------
+Describes the filter's purpose (jitter reduction with minimal lag) and
+credits the original authors with a reference to the CHI 2012 paper.
+
+
+Line 9: Imports
+-----------------
+- numpy (as np): Used solely for np.pi in the _alpha() smoothing factor
+  formula. No other numpy functionality is needed — the filter operates
+  on scalar floats, not arrays.
+
+
+Lines 12–13: OneEuroFilter Class
+-----------------------------------
+- An instance class — each filter maintains its own state (previous value,
+  previous derivative, previous timestamp). This is the only instance class
+  in the extraction folder besides FrameProcessor.
+- In practice, FrameProcessor creates 99 instances: 3 per landmark (x, y, z)
+  for all 33 MediaPipe joints.
+
+
+Lines 15–40: __init__()
+--------------------------
+- Parameters:
+    - t0 (float): Initial timestamp in seconds. Used as the baseline for
+      computing time deltas on the first real filter call.
+    - x0 (float): Initial signal value. Stored as x_prev so the first
+      __call__ has a previous value to smooth against.
+    - min_cutoff (float): Minimum cutoff frequency in Hz. Default 1.0.
+      Controls smoothing strength when the signal is stationary. Lower
+      values = heavier smoothing = less jitter, but more lag at rest.
+    - beta (float): Speed coefficient. Default 0.007 (overridden to 20.0
+      by ExtractionConfig). Controls how quickly the filter loosens during
+      fast movements. Higher values = the cutoff rises faster with speed =
+      less lag during quick motions like arm swings.
+    - d_cutoff (float): Cutoff frequency for the derivative filter.
+      Default 1.0 Hz. Smooths the speed estimate itself to prevent the
+      adaptive cutoff from reacting to noise in the derivative.
+
+- Internal state:
+    - x_prev: Last filtered value. Starts at x0.
+    - dx_prev: Last filtered derivative. Starts at 0.0 (no prior motion).
+    - t_prev: Timestamp of the last call. Starts at t0.
+
+All parameters are cast to float to ensure consistent arithmetic.
+
+
+Lines 42–67: __call__()
+--------------------------
+This is the main filter method. Called as filter(t, x) where t is the
+current timestamp in seconds and x is the noisy value. Returns the
+filtered (smoothed) value.
+
+  Line 53–54: Casts inputs to float for safety. Computes time elapsed
+  (te) since the last sample.
+
+  Lines 56–57: Guard — if time delta is zero or negative (duplicate
+  timestamp), returns the raw value unchanged. Prevents division by zero
+  in the derivative calculation.
+
+  Line 59: Computes the smoothing factor for the derivative filter using
+  d_cutoff. This is a fixed cutoff (not adaptive) because we need a
+  stable speed estimate before we can adapt the main filter.
+
+  Line 60: Computes the raw derivative: how much the signal changed per
+  second. This is (current - previous) / time_elapsed. Mathematically
+  equivalent to the official implementation's (x - prev_x) * freq since
+  freq = 1/te.
+
+  Line 61: Smooths the derivative using exponential low-pass:
+  dx_hat = ad * dx + (1 - ad) * dx_prev. This prevents the adaptive
+  cutoff from jumping around due to noisy derivative estimates.
+
+  Line 63: The core adaptation step. Computes the current cutoff
+  frequency: min_cutoff + beta * |dx_hat|. When the signal is still,
+  |dx_hat| ≈ 0, so cutoff ≈ min_cutoff (heavy smoothing). When moving
+  fast, |dx_hat| is large, so cutoff is high (light smoothing, less lag).
+
+  Line 64: Computes the smoothing factor for the value filter using the
+  adaptive cutoff.
+
+  Line 65: Filters the value: x_hat = a * x + (1 - a) * x_prev. This
+  is standard exponential smoothing. When a is close to 1 (high cutoff),
+  the new value dominates (less smoothing). When a is close to 0 (low
+  cutoff), the previous value dominates (more smoothing).
+
+  Line 67: Updates all internal state for the next call — stores the
+  filtered value, filtered derivative, and current timestamp.
+
+  Line 68: Returns the filtered value.
+
+
+Lines 70–81: _alpha()
+------------------------
+Converts a cutoff frequency and time delta into a smoothing factor
+alpha (0 to 1). This is the standard formula for mapping a continuous-time
+cutoff frequency to a discrete-time exponential smoothing coefficient.
+
+  tau = 1 / (2π * cutoff): The time constant of the equivalent
+  continuous-time low-pass filter. Higher cutoff = smaller tau =
+  faster response.
+
+  alpha = 1 / (1 + tau / te): The discrete smoothing factor. When
+  tau is small relative to te (high cutoff), alpha approaches 1.0
+  (trust the new value). When tau is large (low cutoff), alpha
+  approaches 0.0 (trust the previous value).
+
+This formula is taken directly from the One Euro Filter paper and
+matches the official reference implementation.

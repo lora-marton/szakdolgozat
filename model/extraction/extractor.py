@@ -1,153 +1,234 @@
+"""
+Pose extraction orchestrator for dance videos.
+
+Opens a video file, runs MediaPipe pose detection on each frame,
+delegates per-frame processing to FrameProcessor, and saves the
+results as HDF5 files.
+"""
 import os
-import mediapipe as mp
+
 import cv2
-import numpy as np
 import h5py
+import mediapipe as mp
+import numpy as np
 
 from model.config import DEFAULT_EXTRACTION_CONFIG
-from model.extraction.one_euro_filter import OneEuroFilter
-from model.extraction.normalizer import get_torso_stats, calibrate_scale, compute_follow_cam, warp_mask
+from model.config.extraction_config import ExtractionConfig
+from model.extraction.frame_processor import FrameProcessor
 from model.extraction.visualization import draw_skeleton, draw_mask_overlay
 
 
-def data_extraction(video_path, output_dir='data', label='dance', debug=False, status_callback=None, config=None):
-    """
-    Extract pose landmarks, segmentation masks, and trajectory from a dance video.
+class Extractor:
+    """Extracts pose landmarks, segmentation masks, and trajectory from a dance video."""
 
-    Args:
-        video_path: Path to the input video file.
-        output_dir: Directory for output HDF5 files.
-        label: Prefix for output filenames (e.g., 'teacher', 'student').
-        debug: If True, show OpenCV debug windows.
-        status_callback: Optional callback(msg: str) for progress updates.
-        config: ExtractionConfig instance (uses DEFAULT_EXTRACTION_CONFIG if None).
-    """
-    if config is None:
-        config = DEFAULT_EXTRACTION_CONFIG
+    @staticmethod
+    def data_extraction(
+        video_path: str,
+        output_dir: str = 'data',
+        label: str = 'dance',
+        debug: bool = False,
+        status_callback: object | None = None,
+        config: ExtractionConfig | None = None,
+    ) -> None:
+        """
+        Extract pose data from a video and save to HDF5 files.
 
-    os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, f'{label}_data.h5')
-    output_mask_path = os.path.join(output_dir, f'{label}_masks.h5')
+        Args:
+            video_path: Path to the input video file.
+            output_dir: Directory for output HDF5 files.
+            label: Prefix for output filenames (e.g., 'teacher', 'student').
+            debug: If True, show OpenCV debug windows.
+            status_callback: Optional callback(msg: str) for progress updates.
+            config: ExtractionConfig instance (uses DEFAULT_EXTRACTION_CONFIG if None).
+        """
+        if config is None:
+            config = DEFAULT_EXTRACTION_CONFIG
 
-    options = config.create_landmarker_options()
-    filters = {}
+        os.makedirs(output_dir, exist_ok=True)
+        processor = FrameProcessor(config)
+        options = config.create_landmarker_options()
 
-    collected_raw = []
-    collected_masks = []
-    collected_trajectory = []
+        collected_raw = []
+        collected_masks = []
+        collected_trajectory = []
 
-    fixed_scale_factor = None
+        with mp.tasks.vision.PoseLandmarker.create_from_options(options) as landmarker:
+            cap = cv2.VideoCapture(video_path)
+            source_fps = cap.get(cv2.CAP_PROP_FPS)
+            vid_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            vid_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            frame_interval_ms = 1000.0 / config.target_fps
+            last_processed_time = -frame_interval_ms
 
-    with mp.tasks.vision.PoseLandmarker.create_from_options(options) as landmarker:
-        cap = cv2.VideoCapture(video_path)
-        source_fps = cap.get(cv2.CAP_PROP_FPS)
-        frame_interval_ms = 1000.0 / config.target_fps
+            print(f"Source: {vid_w}x{vid_h} @ {source_fps} FPS. Target: {config.target_fps} FPS")
 
-        vid_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        vid_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
 
-        print(f"Source: {vid_w}x{vid_h} @ {source_fps} FPS. Target: {config.target_fps} FPS")
+                frame_idx = cap.get(cv2.CAP_PROP_POS_FRAMES) - 1
+                timestamp_ms = (frame_idx * 1000.0) / source_fps
 
-        last_processed_time = -frame_interval_ms
+                if timestamp_ms < last_processed_time + frame_interval_ms - (1000.0 / source_fps / 2):
+                    continue
+                last_processed_time += frame_interval_ms
 
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
+                if frame_idx % 60 == 0 and status_callback:
+                    status_callback(f"Processing frame {int(frame_idx)}...")
 
-            frame_idx = cap.get(cv2.CAP_PROP_POS_FRAMES) - 1
-            timestamp_ms = (frame_idx * 1000.0) / source_fps
+                result = Extractor._detect_pose(frame, landmarker, timestamp_ms)
+                
+                landmarks, norm_mask, trajectory = Extractor._extract_frame_data(
+                    result, processor, vid_w, vid_h, timestamp_ms, config,
+                )
 
-            # FPS resampling
-            if timestamp_ms < last_processed_time + frame_interval_ms - (1000.0 / source_fps / 2):
-                continue
-            last_processed_time += frame_interval_ms
+                if debug and result.pose_landmarks:
+                    Extractor._show_debug(frame, result, landmarks, norm_mask, config, vid_w, vid_h)
 
-            if frame_idx % 60 == 0 and status_callback:
-                status_callback(f"Processing frame {int(frame_idx)}...")
+                collected_raw.append(frame_raw)
+                collected_masks.append(norm_mask)
+                collected_trajectory.append(current_trajectory)
 
-            # Detect pose
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
-            result = landmarker.detect_for_video(mp_image, int(timestamp_ms))
+                if debug and cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
 
-            frame_raw = np.zeros((33, 4), dtype=np.float32)
-            current_trajectory = [0.0, 0.0]
-            norm_mask = np.zeros(config.target_mask_size, dtype=np.uint8)
+            cap.release()
+            if debug:
+                cv2.destroyAllWindows()
 
-            if result.pose_landmarks:
-                landmarks = result.pose_landmarks[0]
-
-                # 1. Filter landmarks
-                current_time_sec = timestamp_ms / 1000.0
-                for i, lm in enumerate(landmarks):
-                    if i not in filters:
-                        filters[i] = [
-                            OneEuroFilter(current_time_sec, lm.x, min_cutoff=config.filter_min_cutoff, beta=config.filter_beta),
-                            OneEuroFilter(current_time_sec, lm.y, min_cutoff=config.filter_min_cutoff, beta=config.filter_beta),
-                            OneEuroFilter(current_time_sec, lm.z, min_cutoff=config.filter_min_cutoff, beta=config.filter_beta),
-                        ]
-                    frame_raw[i] = [
-                        filters[i][0](current_time_sec, lm.x),
-                        filters[i][1](current_time_sec, lm.y),
-                        filters[i][2](current_time_sec, lm.z),
-                        lm.visibility,
-                    ]
-
-                # 2. Calibrate scale (first frame only)
-                hip_center, torso_len = get_torso_stats(frame_raw, vid_w, vid_h)
-
-                if fixed_scale_factor is None:
-                    fixed_scale_factor = calibrate_scale(torso_len, config.target_torso_px)
-                    print(f"Calibration Complete. Fixed Scale: {fixed_scale_factor:.2f}")
-
-                # 3. Follow-cam transform
-                affine_matrix = compute_follow_cam(hip_center, fixed_scale_factor, config.norm_center)
-                current_trajectory = [hip_center[0], hip_center[1]]
-
-                # 4. Normalize mask
-                segmentation_mask = result.segmentation_masks[0].numpy_view()
-                norm_mask = warp_mask(segmentation_mask, affine_matrix, config.target_mask_size)
-
-                # 5. Debug visualization
-                if debug:
-                    overlay = draw_mask_overlay(frame, segmentation_mask)
-                    overlay = draw_skeleton(overlay, frame_raw, config.pose_connections, vid_w, vid_h)
-                    cv2.imshow('Main View (Skeleton + Mask)', overlay)
-                    cv2.imshow('Follow-Cam View (Centered)', norm_mask)
-
-            collected_raw.append(frame_raw)
-            collected_masks.append(norm_mask)
-            collected_trajectory.append(current_trajectory)
-
-            if debug and cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-
-        cap.release()
-        if debug:
-            cv2.destroyAllWindows()
-
-    # Save results
-    print(f"Saving {len(collected_raw)} frames...")
-
-    with h5py.File(output_path, 'w') as f:
-        f.create_dataset('raw', data=np.array(collected_raw, dtype=np.float32))
-        dset_traj = f.create_dataset('trajectory', data=np.array(collected_trajectory, dtype=np.float32))
-        dset_traj.attrs['description'] = 'Hip Center (x, y) in original pixels'
-        f.attrs['fps'] = config.target_fps
-        f.attrs['fixed_scale'] = fixed_scale_factor if fixed_scale_factor is not None else 1.0
-
-    print(f"Saving masks to {output_mask_path} (gzip)...")
-    with h5py.File(output_mask_path, 'w') as f:
-        f.create_dataset(
-            'masks',
-            data=np.array(collected_masks, dtype=np.uint8),
-            compression="gzip",
-            compression_opts=4,
+        Extractor._save_data(
+            output_dir, label, collected_raw, collected_masks,
+            collected_trajectory, config.target_fps, processor.fixed_scale,
         )
 
-    print("Done!")
+    @staticmethod
+    def _detect_pose(
+        frame: np.ndarray,
+        landmarker: mp.tasks.vision.PoseLandmarker,
+        timestamp_ms: float,
+    ) -> mp.tasks.vision.PoseLandmarkerResult:
+        """
+        Run MediaPipe pose detection on a single frame.
 
+        Args:
+            frame: BGR video frame.
+            landmarker: MediaPipe PoseLandmarker instance.
+            timestamp_ms: Frame timestamp in milliseconds.
 
-if __name__ == "__main__":
-    data_extraction('videos/d1_student4.mp4', output_dir='data', label='dance', debug=True)
+        Returns:
+            MediaPipe PoseLandmarkerResult.
+        """
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+        return landmarker.detect_for_video(mp_image, int(timestamp_ms))
+
+    @staticmethod
+    def _extract_frame_data(
+        result: mp.tasks.vision.PoseLandmarkerResult,
+        processor: FrameProcessor,
+        vid_w: int,
+        vid_h: int,
+        timestamp_ms: float,
+        config: ExtractionConfig,
+    ) -> tuple[np.ndarray, np.ndarray, list[float]]:
+        """
+        Extract landmarks, mask, and trajectory from a detection result.
+
+        If no pose was detected, returns zeroed defaults.
+
+        Args:
+            result: MediaPipe detection result.
+            processor: FrameProcessor instance for filtering and normalization.
+            vid_w: Video frame width in pixels.
+            vid_h: Video frame height in pixels.
+            timestamp_ms: Frame timestamp in milliseconds.
+            config: ExtractionConfig for default sizes.
+
+        Returns:
+            Tuple of (landmarks, normalized_mask, trajectory).
+        """
+        if not result.pose_landmarks:
+            return (
+                np.zeros((33, 4), dtype=np.float32),
+                np.zeros(config.target_mask_size, dtype=np.uint8),
+                [0.0, 0.0],
+            )
+
+        raw_landmarks = result.pose_landmarks[0]
+        segmentation_mask = result.segmentation_masks[0].numpy_view()
+        processed_frame = processor.process_frame(raw_landmarks, segmentation_mask, vid_w, vid_h, timestamp_ms)
+        return processed_frame
+
+    @staticmethod
+    def _show_debug(
+        frame: np.ndarray,
+        result: mp.tasks.vision.PoseLandmarkerResult,
+        landmarks: np.ndarray,
+        norm_mask: np.ndarray,
+        config: ExtractionConfig,
+        vid_w: int,
+        vid_h: int,
+    ) -> None:
+        """
+        Display debug visualization windows.
+
+        Args:
+            frame: Original BGR video frame.
+            result: MediaPipe detection result (for raw segmentation mask).
+            landmarks: Filtered landmarks of shape (33, 4).
+            norm_mask: Normalized mask (uint8).
+            config: ExtractionConfig with pose_connections.
+            vid_w: Video frame width in pixels.
+            vid_h: Video frame height in pixels.
+        """
+        segmentation_mask = result.segmentation_masks[0].numpy_view()
+        overlay = draw_mask_overlay(frame, segmentation_mask)
+        overlay = draw_skeleton(overlay, landmarks, config.pose_connections, vid_w, vid_h)
+        cv2.imshow('Main View (Skeleton + Mask)', overlay)
+        cv2.imshow('Follow-Cam View (Centered)', norm_mask)
+
+    @staticmethod
+    def _save_data(
+        output_dir: str,
+        label: str,
+        collected_raw: list,
+        collected_masks: list,
+        collected_trajectory: list,
+        target_fps: float,
+        fixed_scale: float | None,
+    ) -> None:
+        """
+        Save extracted data to HDF5 files.
+
+        Args:
+            output_dir: Directory for output files.
+            label: Prefix for filenames ('teacher' or 'student').
+            collected_raw: List of landmark arrays.
+            collected_masks: List of mask arrays.
+            collected_trajectory: List of [x, y] trajectory points.
+            target_fps: Frame rate used during extraction.
+            fixed_scale: Scale factor from calibration (1.0 if not calibrated).
+        """
+        output_path = os.path.join(output_dir, f'{label}_data.h5')
+        output_mask_path = os.path.join(output_dir, f'{label}_masks.h5')
+
+        print(f"Saving {len(collected_raw)} frames...")
+
+        with h5py.File(output_path, 'w') as f:
+            f.create_dataset('raw', data=np.array(collected_raw, dtype=np.float32))
+            dset_traj = f.create_dataset('trajectory', data=np.array(collected_trajectory, dtype=np.float32))
+            dset_traj.attrs['description'] = 'Hip Center (x, y) in original pixels'
+            f.attrs['fps'] = target_fps
+            f.attrs['fixed_scale'] = fixed_scale if fixed_scale is not None else 1.0
+
+        print(f"Saving masks to {output_mask_path} (gzip)...")
+        with h5py.File(output_mask_path, 'w') as f:
+            f.create_dataset(
+                'masks',
+                data=np.array(collected_masks, dtype=np.uint8),
+                compression="gzip",
+                compression_opts=4,
+            )
+
+        print("Done!")

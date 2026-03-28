@@ -1,0 +1,188 @@
+frame_processor.py — Line-by-Line Explanation
+================================================
+
+This file handles all per-frame processing of raw MediaPipe pose output:
+landmark filtering (jitter removal), scale calibration, follow-cam
+normalization, and segmentation mask warping. Unlike the other classes in
+the pipeline, FrameProcessor is an instance class — it maintains filter
+state and the calibrated scale factor across frames.
+
+
+Lines 1–6: Module Docstring
+-----------------------------
+Describes the file's four responsibilities: filtering, calibration,
+follow-cam normalization, and mask warping. Notes that it maintains
+state across frames (unlike the static-only classes elsewhere).
+
+
+Lines 7–8: Third-Party Imports
+-------------------------------
+- cv2 (OpenCV): Used in _warp_mask() for cv2.warpAffine, which applies
+  the 2x3 affine transformation to the segmentation mask. INTER_LINEAR
+  interpolation smooths the warped output.
+- numpy (as np): Array operations throughout — creating zero arrays,
+  building affine matrices, computing Euclidean distances, type casting.
+
+
+Lines 10–11: Project Imports
+------------------------------
+- ExtractionConfig (from model.config.extraction_config): The type used
+  for the config parameter. Contains filter_min_cutoff, filter_beta,
+  target_torso_px, target_mask_size, norm_center, etc.
+- OneEuroFilter (from model.extraction.one_euro_filter): An adaptive
+  low-pass filter that reduces landmark jitter while preserving fast
+  movements. Each filter instance is stateful — it remembers its previous
+  value and adapts its cutoff frequency based on how fast the signal is
+  changing.
+
+
+Lines 14–15: FrameProcessor Class
+------------------------------------
+- An instance class (not static) because it maintains state across frames:
+  the filter dictionary and the calibrated scale factor.
+- Created once per video extraction, used for every frame in the video loop.
+
+
+Lines 17–26: __init__()
+--------------------------
+- Stores the ExtractionConfig for use by all helper methods.
+- self._filters: Empty dict that will hold {landmark_index: [filter_x,
+  filter_y, filter_z]} entries. Grows to 33 entries (one per MediaPipe
+  joint) on the first frame, then reused for all subsequent frames.
+- self._fixed_scale: Starts as None. Set once on the first frame by
+  _calibrate_if_needed(). Remains constant for the rest of the video
+  to ensure consistent normalization.
+
+
+Lines 28–58: process_frame()
+-------------------------------
+The public entry point called by Extractor for each frame with a detected
+pose. Orchestrates the five processing steps in order:
+
+  Line 51 — _filter_landmarks(): Passes raw MediaPipe landmarks through
+  the One Euro Filters to remove jitter. Returns a clean (33, 4) array.
+
+  Line 52 — _get_hip_center(): Computes the mid-hip position in pixel
+  coordinates. Used as the anchor point for the follow-cam transform
+  and as the trajectory output.
+
+  Line 53 — _calibrate_if_needed(): On the first frame only, measures the
+  torso length and computes a fixed scale factor. No-ops on subsequent
+  frames.
+
+  Line 54 — _build_affine(): Builds a 2x3 affine transformation matrix
+  that simultaneously scales the image and translates the hip to the
+  center of the normalized space.
+
+  Line 55 — _warp_mask(): Applies the affine transform to the segmentation
+  mask, producing a centered, scaled, uint8 output.
+
+  Line 56 — Extracts the trajectory as [hip_x, hip_y] in original pixel
+  coordinates.
+
+Returns the tuple (filtered_landmarks, normalized_mask, trajectory).
+
+
+Lines 60–63: fixed_scale Property
+------------------------------------
+- A read-only property exposing self._fixed_scale.
+- Used by Extractor._save_data() to store the scale factor in the HDF5
+  file metadata. Returns None if process_frame() has not been called yet.
+
+
+Lines 65–96: _filter_landmarks()
+-----------------------------------
+- Takes raw MediaPipe landmarks (a list of objects with .x, .y, .z,
+  .visibility attributes) and the frame timestamp.
+- Converts timestamp from milliseconds to seconds (the One Euro Filter
+  expects seconds for computing time deltas).
+- Iterates over all 33 landmarks. For each:
+  - If this landmark index has no filter yet (first frame), creates a
+    triplet of filters via _create_filter_triplet().
+  - Passes x, y, z through their respective filters. The filters smooth
+    the values based on their internal state from previous frames.
+  - Stores visibility as-is (not filtered — it's a confidence score, not
+    a spatial coordinate).
+- Returns a (33, 4) float32 array of filtered [x, y, z, visibility].
+
+
+Lines 98–114: _create_filter_triplet()
+-----------------------------------------
+- Creates three OneEuroFilter instances for one landmark (x, y, z axes).
+- Each filter is initialized with the current timestamp and the initial
+  value from the first detection.
+- min_cutoff and beta come from the config:
+  - min_cutoff (1.0): Baseline smoothing frequency. Lower means more
+    smoothing when the joint is stationary.
+  - beta (20.0): Speed coefficient. Higher means less smoothing (less lag)
+    during fast movements. This is critical for dance — fast arm swings
+    should not be delayed by the filter.
+
+
+Lines 116–133: _calibrate_if_needed()
+----------------------------------------
+- Guard: if self._fixed_scale is already set, returns immediately. This
+  ensures calibration only happens once per video.
+- Calls _get_torso_length() to measure the distance from mid-shoulder to
+  mid-hip in pixels.
+- Divides target_torso_px (default 40.0 from config) by the measured
+  torso length. The result is a scale factor that, when applied, makes
+  every dancer's torso exactly 40 pixels long regardless of their
+  distance from the camera or body proportions.
+- Prints the calibrated scale for logging.
+
+Why calibrate on the first frame only: using a fixed scale prevents the
+dancer from appearing to "breathe" (grow/shrink) as their torso length
+varies slightly between frames. The first frame is assumed to be a
+neutral standing pose.
+
+
+Lines 135–149: _get_hip_center()
+-----------------------------------
+- Converts the normalized coordinates (0-1 range) of left hip (landmark
+  23) and right hip (landmark 24) to pixel coordinates by multiplying
+  by vid_w and vid_h.
+- Returns their midpoint as a numpy array of [x, y].
+- This midpoint serves two purposes: it's the anchor for the follow-cam
+  transform (the camera "follows" the hips) and it's the trajectory
+  output (tracking floor movement).
+
+
+Lines 151–167: _get_torso_length()
+-------------------------------------
+- Same coordinate conversion for left shoulder (landmark 11) and right
+  shoulder (landmark 12).
+- Computes mid-shoulder from the two shoulder positions.
+- Calls _get_hip_center() to get mid-hip (reuses the same logic rather
+  than duplicating it).
+- Returns the Euclidean distance (np.linalg.norm) between mid-shoulder
+  and mid-hip. This is the "torso length" used for scale calibration.
+
+
+Lines 169–186: _build_affine()
+---------------------------------
+- Constructs a 2x3 affine transformation matrix for OpenCV's warpAffine.
+- The matrix does two things simultaneously:
+  1. Scales by self._fixed_scale (uniform in x and y — no stretching).
+  2. Translates so the hip lands at norm_center (default (128, 128) — the
+     center of the 256x256 normalized space).
+- The translation math: after scaling, the hip would be at
+  hip_x * scale. We want it at norm_center_x, so we translate by
+  norm_center_x - hip_x * scale. Same for y.
+- Returns a float32 array of shape (2, 3):
+  [[scale, 0, tx],
+   [0, scale, ty]]
+  The zero off-diagonal entries mean no rotation or shearing.
+
+
+Lines 188–201: _warp_mask()
+------------------------------
+- Takes the raw segmentation mask from MediaPipe (float values 0-1,
+  where 1 = person and 0 = background) and the affine matrix.
+- cv2.warpAffine applies the transformation: scales and translates the
+  mask so the dancer is centered and uniformly sized.
+- target_size comes from config (default (256, 256)).
+- INTER_LINEAR interpolation ensures smooth edges after warping.
+- Converts from float (0-1) to uint8 (0-255) by multiplying by 255.
+  The uint8 format is what gets saved to HDF5 and used by the mask
+  comparison pipeline downstream.

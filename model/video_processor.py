@@ -10,7 +10,7 @@ import traceback
 from typing import Callable, Awaitable
 
 from model.comparison.comparator import compare_dances
-from model.extraction.extractor import data_extraction
+from model.extraction.extractor import Extractor
 from model.feedback.feedback import extract_timeline_markers, generate_feedback
 from model.feedback.video_feedback import generate_feedback_video
 from model.preprocessing.preprocessor import Preprocessor
@@ -53,10 +53,10 @@ class VideoProcessor:
             return None
 
         try:
-            await asyncio.to_thread(data_extraction, teacher_file, output_dir, 'teacher')
+            await asyncio.to_thread(Extractor.data_extraction, teacher_file, output_dir, 'teacher')
             await send_status("Teacher video extracted.")
 
-            await asyncio.to_thread(data_extraction, student_file, output_dir, 'student')
+            await asyncio.to_thread(Extractor.data_extraction, student_file, output_dir, 'student')
             await send_status("Student video extracted.")
 
             await send_status("Preprocessing...")
