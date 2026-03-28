@@ -1,0 +1,154 @@
+video_processor.py — Line-by-Line Explanation
+================================================
+
+This file is the central orchestrator of the dance comparison pipeline.
+It ties the four processing phases together into a single async function
+and provides real-time status updates via Server-Sent Events.
+
+
+Lines 1–6: Module Docstring
+-----------------------------
+Describes the file as the pipeline orchestrator that connects extraction,
+comparison, feedback generation, and video rendering.
+
+
+Lines 7–10: Standard Library Imports
+--------------------------------------
+- asyncio: Provides asyncio.to_thread() to offload CPU-heavy work (pose extraction,
+  comparison, video rendering) to a separate thread so the async event loop stays
+  responsive and can keep sending SSE updates.
+- os: File system operations — checking if video files exist, extracting basenames.
+- traceback: Prints full stack traces to the console when an exception occurs,
+  which is essential for debugging pipeline failures.
+- Callable, Awaitable (from typing): Type hints for the event_handler parameter.
+  Callable[[str], Awaitable[None]] means "a function that takes a string and
+  returns an awaitable that resolves to None" — i.e. an async callback.
+
+
+Lines 12–17: Project Imports
+-------------------------------
+- compare_dances (from model.comparison.comparator): Phase 2 — runs DTW alignment
+  and computes skeleton, trajectory, and mask scores.
+- extract_timeline_markers, generate_feedback (from model.feedback.feedback):
+  Phase 3 — generates human-readable feedback messages and video timeline markers.
+- generate_feedback_video (from model.feedback.video_feedback): Phase 4 — renders
+  a side-by-side comparison video with skeleton overlays.
+- DEFAULT_COMPARISON_CONFIG (from model.config): The default ComparisonConfig
+  instance used when no config is explicitly passed.
+- ComparisonConfig (from model.config.comparison_config): The type itself, used
+  in the type annotation for the config parameter.
+- data_extraction (from model.extraction.extractor): Phase 1 — extracts pose
+  landmarks and segmentation masks from a video using MediaPipe.
+
+
+Lines 20–21: VideoProcessor Class
+------------------------------------
+- A class that groups the pipeline orchestration logic.
+- Contains a single @staticmethod — no instance state needed.
+
+
+Lines 23–30: process_videos() Signature
+-----------------------------------------
+- @staticmethod: No self parameter, called as VideoProcessor.process_videos().
+- async def: This is an async function — it uses await for thread offloading
+  and for sending SSE status updates.
+- Parameters:
+    - teacher_file (str): Path to the reference/teacher dance video file.
+    - student_file (str): Path to the student's dance video file.
+    - output_dir (str): Directory where extracted data (HDF5), results (JSON),
+      and the feedback video (MP4) are stored. Defaults to 'data'.
+    - config (ComparisonConfig | None): Optional comparison configuration.
+      If None, DEFAULT_COMPARISON_CONFIG is used.
+    - event_handler (Callable[[str], Awaitable[None]] | None): Optional async
+      callback for sending status messages. In practice, this is the
+      sse_status_handler from fileGetter.py that puts messages into the SSE queue.
+- Returns: dict | None — the full results dict on success, or None on failure.
+
+
+Lines 46–47: Default Config Fallback
+---------------------------------------
+- If no config was passed, use DEFAULT_COMPARISON_CONFIG with all standard
+  weights and thresholds.
+
+
+Lines 49–52: send_status() Inner Helper
+------------------------------------------
+- A closure (inner async function) that wraps status messaging.
+- Line 50: Always prints the message to the server console (for logging).
+- Lines 51–52: If an event_handler was provided, also sends the message via SSE
+  to the frontend. The await is necessary because the handler is async.
+
+
+Lines 54–58: File Existence Guard
+-----------------------------------
+- Checks that both video files exist on disk before starting processing.
+- If either is missing, sends an error status and returns None immediately.
+- This prevents confusing errors deeper in the pipeline.
+
+
+Lines 60–62: Phase 1 — Teacher Extraction
+--------------------------------------------
+- asyncio.to_thread(data_extraction, ...) runs the extraction function in a
+  separate thread. data_extraction is CPU-heavy (MediaPipe pose detection on
+  every frame), so running it in a thread prevents blocking the event loop.
+- The 'teacher' label tells the extractor to name output files as teacher_data.h5.
+- After completion, sends "Teacher video extracted." via SSE.
+
+
+Lines 64–65: Phase 1 — Student Extraction
+--------------------------------------------
+- Same extraction process for the student video with 'student' label.
+- Output: student_data.h5 in the output_dir.
+
+
+Lines 67–73: Phase 2 — Comparison
+------------------------------------
+- Also runs in a thread via asyncio.to_thread().
+- compare_dances() loads the extracted HDF5 data, runs DTW temporal alignment,
+  and computes:
+    - skeleton_score (joint angles + center of gravity)
+    - trajectory_score (floor movement direction + speed)
+    - mask_score (silhouette shape + motion energy)
+    - overall_score (weighted combination of the three)
+    - per_joint_scores, worst_frames, alignment_path, etc.
+- Returns the results dict which is progressively enriched in later phases.
+- Sends the overall score via SSE immediately after comparison finishes.
+
+
+Lines 75–78: Phase 3 — Feedback Generation
+---------------------------------------------
+- generate_feedback(): Analyzes the scores and produces a list of plain-text
+  feedback messages (warnings for weak areas, praise for strong areas).
+  Stored in results['feedback'].
+- extract_timeline_markers(): Identifies the worst frames and converts them
+  to timestamped markers for the frontend video player.
+  Stored in results['timeline_markers'].
+- These are NOT run in asyncio.to_thread() because they are lightweight
+  dict/list operations, not CPU-heavy.
+
+
+Lines 80–87: Phase 4 — Feedback Video
+----------------------------------------
+- generate_feedback_video() renders a side-by-side MP4 with skeleton overlays.
+  This IS run in asyncio.to_thread() because it involves reading all video frames,
+  drawing skeletons, compositing, and H.264 encoding — very CPU-heavy.
+- results.get('preprocess_info') passes the audio offset information so the
+  video renderer can sync the two videos properly.
+- Line 86: Only the filename (basename) is stored in the results dict, not the
+  full path. The feedbackSender serves the file from the session directory.
+
+
+Line 89: Return
+-----------------
+- Returns the fully enriched results dict containing all scores, per-joint data,
+  feedback messages, timeline markers, and the video filename.
+
+
+Lines 91–94: Error Handling
+-----------------------------
+- Catches any exception from any of the four phases.
+- Line 92: traceback.print_exc() prints the full stack trace to the server
+  console for debugging.
+- Line 93: Sends a user-friendly error message via SSE including the exception
+  type and message.
+- Line 94: Returns None, which fileGetter.py interprets as a 500 HTTP error.
