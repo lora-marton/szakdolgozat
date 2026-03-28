@@ -2,7 +2,7 @@
 Comparison configuration.
 
 All constants for dance comparison scoring: weights, decay parameters,
-joint definitions, mask settings, trajectory settings, and feedback thresholds.
+joint definitions, mask settings, and trajectory settings.
 """
 from dataclasses import dataclass, field
 
@@ -78,11 +78,6 @@ class ComparisonConfig:
 
     trajectory_weight_direction: float = 0.75
     trajectory_weight_speed: float = 0.25
-
-    feedback_joint_warn_threshold: float = 70.0
-    feedback_direction_warn_threshold: float = 0.7
-    feedback_mask_warn_threshold: float = 60.0
-    feedback_praise_threshold: float = 80.0
 
 
 DEFAULT_COMPARISON_CONFIG = ComparisonConfig()

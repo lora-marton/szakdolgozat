@@ -1,0 +1,132 @@
+motion_energy.py — Line-by-Line Explanation
+=============================================
+
+This file detects the active dance region in a landmark sequence. It computes
+how much each joint moves between consecutive frames (motion energy), then
+scans for the first and last sustained burst of movement. The preprocessor
+uses these boundaries to trim idle periods from both videos before comparison.
+
+
+Lines 1–6: Module Docstring
+-----------------------------
+Describes the file's purpose: compute per-frame motion energy from pose
+landmarks and identify the first/last frame of sustained movement.
+
+
+Lines 7–8: Imports
+-------------------
+- numpy (as np): Array operations — diff for frame-to-frame deltas, sqrt for
+  Euclidean distances, argmax/sum/mean for aggregation.
+
+
+Lines 10–12: MotionEnergy Class
+---------------------------------
+- A class that groups the motion detection logic as static methods.
+- Contains no instance state — all methods are @staticmethod.
+- One public method (compute_motion_energy) and one public method
+  (find_active_range), both called by the Preprocessor.
+
+
+Lines 14–31: compute_motion_energy()
+---------------------------------------
+- @staticmethod: No self parameter, called as MotionEnergy.compute_motion_energy().
+- Parameters:
+    - landmarks (np.ndarray): Array of shape (T, 33, 4). T is the number of
+      frames, 33 is the number of MediaPipe body landmarks (nose, eyes,
+      shoulders, elbows, wrists, hips, knees, ankles, etc.), and 4 values
+      per landmark: x, y, z coordinates plus a visibility confidence score.
+- Returns: np.ndarray of shape (T-1,) — one energy value per frame transition.
+
+The function computes motion energy in four steps:
+
+  Line 28: landmarks[:, :, :3]
+  Slices the array to keep only x, y, z and drop visibility. The slice
+  [:, :, :3] means "all frames, all joints, first 3 values". Result shape:
+  (T, 33, 3).
+
+  Line 29: np.diff(positions, axis=0)
+  Computes frame-to-frame differences along axis 0 (the time dimension).
+  For each joint, subtracts frame i from frame i+1. This gives the
+  displacement vector of every joint between consecutive frames. Result
+  shape: (T-1, 33, 3) — one fewer frame because differences are between
+  pairs.
+
+  Line 30: np.sqrt((deltas ** 2).sum(axis=-1))
+  Euclidean distance formula applied per joint per frame transition.
+  Squares each coordinate delta (dx², dy², dz²), sums along axis=-1
+  (the last dimension, i.e. the coordinate axis), then takes the square
+  root. This collapses the 3 coordinates into a single distance value.
+  Result shape: (T-1, 33).
+
+  Line 31: per_joint.mean(axis=-1)
+  Averages across all 33 joints (axis=-1 is now the joint dimension).
+  Produces a single scalar per frame transition representing the overall
+  motion energy of the whole body. Result shape: (T-1,).
+
+The axis argument in numpy tells the function which dimension to operate
+along. axis=0 is the first dimension (frames), axis=-1 is the last
+dimension (whichever that is at the current step — coordinates, then joints).
+
+
+Lines 33–39: find_active_range() Signature
+--------------------------------------------
+- @staticmethod: Called as MotionEnergy.find_active_range().
+- Parameters:
+    - energy (np.ndarray): Array of shape (T-1,) — the output of
+      compute_motion_energy().
+    - threshold_ratio (float): Fraction of the peak energy that counts as
+      "active". Default 0.15 means frames with less than 15% of peak
+      energy are considered idle.
+    - min_duration_frames (int): Size of the sliding window. Default 10
+      means at least 10 consecutive frames must show sustained activity.
+    - active_window_ratio (float): Fraction of frames within the sliding
+      window that must be above threshold. Default 0.7 means at least 70%
+      of the window (7 out of 10 frames) must be active. This tolerance
+      allows brief dips in energy (e.g. a pose hold for 2–3 frames)
+      without breaking the detection.
+- Returns: tuple[int, int] — (start, end) frame indices into the original
+  landmark array.
+
+
+Lines 56–57: Thresholding
+---------------------------
+- Computes the activity threshold as a fraction of the peak energy value.
+  This makes the threshold adaptive — a slow dancer and an energetic dancer
+  each get their own threshold scaled to their own peak.
+- Creates a boolean array where True means the frame is above threshold
+  and False means it is idle.
+
+
+Line 59: Required Active Count
+---------------------------------
+- Multiplies the window size by the active_window_ratio to get the minimum
+  number of active frames needed within each window. For a 10-frame window
+  with 0.7 ratio, at least 7 frames must be active.
+
+
+Lines 61–66: Forward Scan for Start
+--------------------------------------
+- Starts at frame 0 and slides a window of min_duration_frames forward.
+- At each position i, counts how many frames in the window are active
+  using .sum() on the boolean array (True counts as 1, False as 0).
+- The first window where the active count meets the threshold sets
+  start = i and breaks. If no window qualifies, start stays at 0.
+
+
+Lines 68–73: Backward Scan for End
+-------------------------------------
+- Same sliding window logic but scanning from the end of the sequence
+  backward.
+- end defaults to len(energy) which equals T-1. This maps correctly to
+  landmark indices: the energy array has T-1 elements (frame transitions),
+  and using T-1 as the slice end means "up to the last landmark frame".
+- When a qualifying window is found, end = i + 1. The +1 is needed because
+  energy[i] represents the transition between landmark frames i and i+1,
+  so the active region must include landmark frame i+1.
+
+
+Line 75: Return
+-----------------
+- Returns (start, end) as frame indices into the original landmark array.
+  The Preprocessor uses these to compute the intersection of both dancers'
+  active ranges and slice both datasets accordingly.

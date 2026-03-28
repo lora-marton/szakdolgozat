@@ -1,0 +1,20 @@
+"""
+Feedback configuration.
+
+All thresholds for rule-based feedback generation: warning triggers
+and praise triggers for each scoring component.
+"""
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class FeedbackConfig:
+    """Configuration for feedback generation thresholds."""
+
+    joint_warn_threshold: float = 70.0
+    direction_warn_threshold: float = 0.7
+    mask_warn_threshold: float = 60.0
+    praise_threshold: float = 80.0
+
+
+DEFAULT_FEEDBACK_CONFIG = FeedbackConfig()

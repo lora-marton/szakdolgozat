@@ -1,33 +1,29 @@
 """
 Dance comparison orchestrator.
 
-Loads teacher and student HDF5 data, runs all comparison metrics,
-and produces a structured result with scores and feedback.
+Runs all comparison metrics on preprocessed teacher and student data
+and produces a structured result with scores and per-frame details.
 """
-import os
 import numpy as np
-import h5py
 
 from model.config import DEFAULT_COMPARISON_CONFIG
-from model.preprocessing.preprocessor import preprocess
 from model.comparison.dtw import align_sequences
 from model.comparison.skeleton_metrics import compute_joint_angles, compute_cog, compare_angles, compare_cog
 from model.comparison.mask_metrics import compute_mask_score
 from model.comparison.trajectory_metrics import compare_trajectories
 
 
-def compare_dances(output_dir, teacher_video=None, student_video=None, config=None):
+def compare_dances(teacher_data, student_data, config=None):
     """
-    Compare teacher and student dance data from a session directory.
+    Compare preprocessed teacher and student dance data.
 
     Args:
-        output_dir: Path to session directory containing teacher_*.h5 and student_*.h5 files.
-        teacher_video: Path to the teacher video file (needed for audio sync).
-        student_video: Path to the student video file (needed for audio sync).
+        teacher_data: Dict with 'landmarks', 'masks', 'trajectory' arrays + 'fps'.
+        student_data: Same structure as teacher_data.
         config: ComparisonConfig instance (uses DEFAULT_COMPARISON_CONFIG if None).
 
     Returns:
-        results: Dict with scores and feedback:
+        Dict with scores and per-frame details:
             {
                 'overall_score': float (0-100),
                 'skeleton_score': float (0-100),
@@ -35,25 +31,12 @@ def compare_dances(output_dir, teacher_video=None, student_video=None, config=No
                 'mask_score': float (0-100),
                 'timing_cost': float,
                 'alignment_path': list,
-                'feedback': list of str,
+                'per_joint_scores': dict,
+                'worst_frames': list,
             }
     """
     if config is None:
         config = DEFAULT_COMPARISON_CONFIG
-
-    # --- Load data ---
-    teacher_data = _load_session_data(output_dir, 'teacher')
-    student_data = _load_session_data(output_dir, 'student')
-
-    # --- Phase 0: Preprocessing (sync + trim) ---
-    preprocess_info = {'teacher_offset': 0, 'student_offset': 0}
-    if teacher_video and student_video:
-        teacher_data, student_data, preprocess_info = preprocess(
-            teacher_data, student_data,
-            teacher_video, student_video,
-        )
-    else:
-        print("[Comparator] Video paths not provided — skipping audio sync & trimming.")
 
     # --- Phase A: Temporal Alignment (DTW) ---
     alignment_path, timing_cost = align_sequences(
@@ -115,33 +98,6 @@ def compare_dances(output_dir, teacher_video=None, student_video=None, config=No
         'worst_frames': worst_frames,
         'per_frame_shape': mask_result['per_frame_shape'],
         'energy_details': mask_result['energy_details'],
-        'preprocess_info': preprocess_info,
         'teacher_fps': teacher_data['fps'],
         'student_fps': student_data['fps'],
     }
-
-
-def _load_session_data(output_dir, label):
-    """Load landmarks, masks, and trajectory from a session's HDF5 files."""
-    data_path = os.path.join(output_dir, f'{label}_data.h5')
-    mask_path = os.path.join(output_dir, f'{label}_masks.h5')
-
-    with h5py.File(data_path, 'r') as f:
-        landmarks = f['raw'][:]
-        trajectory = f['trajectory'][:]
-        fps = f.attrs.get('fps', 60.0)
-        fixed_scale = f.attrs.get('fixed_scale', 1.0)
-
-    with h5py.File(mask_path, 'r') as f:
-        masks = f['masks'][:]
-
-    return {
-        'landmarks': landmarks,
-        'trajectory': trajectory,
-        'masks': masks,
-        'fps': fps,
-        'fixed_scale': fixed_scale,
-    }
-
-
-

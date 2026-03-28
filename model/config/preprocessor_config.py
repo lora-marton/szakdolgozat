@@ -14,6 +14,7 @@ class PreprocessorConfig:
 
     motion_threshold_ratio: float = 0.15
     min_active_duration: int = 10
+    active_window_ratio: float = 0.7
 
 
 DEFAULT_PREPROCESSOR_CONFIG = PreprocessorConfig()

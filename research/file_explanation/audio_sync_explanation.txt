@@ -1,0 +1,133 @@
+audio_sync.py — Line-by-Line Explanation
+==========================================
+
+This file handles the temporal synchronisation of two dance videos by
+extracting their audio tracks and computing the lag between them via
+cross-correlation. The result is an integer frame offset that tells the
+preprocessing orchestrator how many frames to trim from the leading video.
+
+
+Lines 1–6: Module Docstring
+-----------------------------
+Describes the file's purpose: extract audio from both videos and compute
+the lag in frames so downstream steps can align the sequences.
+
+
+Lines 7–8: Imports
+-------------------
+- numpy (as np): Array operations — creating empty arrays, float32 casting,
+  argmax for finding the peak correlation.
+- correlate (from scipy.signal): Computes the full cross-correlation between
+  two 1D signals. Internally uses FFT for large arrays, making it efficient
+  even for long audio tracks. mode='full' checks every possible alignment
+  position between the two signals.
+- correlation_lags (from scipy.signal): Returns the lag values corresponding
+  to each position in the correlate() output. Converts array indices into
+  meaningful lag values (negative = second signal leads, positive = first
+  signal leads).
+
+
+Lines 11–12: AudioSync Class
+------------------------------
+- A class that groups the audio synchronisation logic as static methods.
+- Contains no instance state — all methods are @staticmethod.
+- One public method (compute_audio_offset) and one private helper
+  (_load_audio_from_video).
+
+
+Lines 14–19: compute_audio_offset() Signature
+------------------------------------------------
+- @staticmethod: No self parameter, called as AudioSync.compute_audio_offset().
+- Parameters:
+    - video1_path (str): Path to the first (reference) video file.
+    - video2_path (str): Path to the second video file.
+    - target_fps (float): Frame rate used by the extraction pipeline.
+      Needed to convert the audio lag from seconds into frames.
+      Defaults to 60.0.
+    - sr (int): Audio sample rate for analysis. Defaults to 22050 Hz,
+      which is the standard rate for music analysis.
+- Returns: int — the frame offset between the two videos.
+
+
+Lines 39–40: Audio Extraction
+-------------------------------
+- Calls _load_audio_from_video() for both videos to get 1D float32 mono
+  audio arrays at the specified sample rate.
+
+
+Lines 42–44: Empty Audio Guard
+--------------------------------
+- If either audio track is empty (video has no audio stream), prints a
+  warning and returns 0 (no offset). This prevents a crash in the
+  cross-correlation step and lets the pipeline continue without sync.
+
+
+Lines 46–47: Cross-Correlation
+--------------------------------
+- correlate(audio1, audio2, mode='full'): Slides audio2 across audio1 at
+  every possible position and computes their similarity (dot product) at
+  each lag. The output array has length len(audio1) + len(audio2) - 1.
+- correlation_lags(): Returns the corresponding lag value for each position
+  in the correlation output, so the peak index can be converted to a
+  meaningful sample offset.
+
+
+Line 49: Peak Detection
+-------------------------
+- np.argmax(correlation) finds the index of the highest correlation value.
+- lags[argmax] converts that index to the actual lag in audio samples.
+  This is the number of samples by which audio2 is shifted relative to
+  audio1 for the best alignment.
+
+
+Lines 51–53: Lag Conversion and Return
+----------------------------------------
+- Converts sample lag to seconds by dividing by the sample rate.
+- Converts seconds to frames by multiplying by the target fps and rounding
+  to the nearest integer.
+- Returns the frame offset: positive means video2 starts later, negative
+  means video1 starts later.
+
+
+Lines 55–60: _load_audio_from_video() Signature
+--------------------------------------------------
+- @staticmethod private helper, called only by compute_audio_offset().
+- Parameters:
+    - video_path (str): Path to the video file.
+    - sr (int): Desired sample rate for the output audio.
+- Returns: np.ndarray — 1D float32 array of mono audio samples.
+
+
+Line 68: Lazy MoviePy Import
+-------------------------------
+- moviepy.VideoFileClip is imported inside the function body rather than
+  at the top of the file. This is intentional: moviepy is a heavy library
+  that pulls in FFmpeg bindings, so lazy-loading avoids slowing down module
+  import when audio sync is not needed.
+
+
+Lines 70–73: Video Clip and Audio Guard
+-----------------------------------------
+- Opens the video file as a VideoFileClip.
+- If the clip has no audio track (clip.audio is None), closes the clip
+  and returns an empty float32 array. The caller checks for this and
+  falls back to zero offset.
+
+
+Lines 75–76: Audio Extraction
+-------------------------------
+- Extracts the audio as a numpy array at the desired sample rate.
+- Closes the clip immediately after extraction to free FFmpeg resources.
+
+
+Lines 78–81: Stereo to Mono Conversion
+-----------------------------------------
+- If the audio has two channels (ndim == 2), averages them into a single
+  mono channel. Cross-correlation needs 1D signals.
+- If already mono, uses the array as-is.
+
+
+Line 83: Return
+-----------------
+- Casts the mono audio to float32 and returns it. Float32 is sufficient
+  precision for cross-correlation and uses half the memory of float64.

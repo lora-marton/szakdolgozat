@@ -5,10 +5,10 @@ Analyses scores from the comparison pipeline and produces a prioritised
 list of plain-text messages — from high-level summary down to
 component-specific tips and positive reinforcement.
 """
-from model.config import DEFAULT_CONFIG
+from model.config import DEFAULT_CONFIG, DEFAULT_FEEDBACK_CONFIG
 
 
-def generate_feedback(results, config):
+def generate_feedback(results, config=None):
     """
     Generate human-readable feedback from comparison results.
 
@@ -20,11 +20,14 @@ def generate_feedback(results, config):
             - alignment_path, timing_cost
             - per_frame_shape: array (N,) — DTM shape scores per frame
             - energy_details: dict with per_frame_ratios, teacher_energy, student_energy
-        config: ComparisonConfig instance with feedback thresholds.
+        config: FeedbackConfig instance with feedback thresholds (uses defaults if None).
 
     Returns:
         feedback: List of str — prioritised feedback messages.
     """
+    if config is None:
+        config = DEFAULT_FEEDBACK_CONFIG
+
     feedback = []
 
     overall = results['overall_score']
@@ -37,7 +40,7 @@ def generate_feedback(results, config):
 
     # ── 2. Joint-specific warnings ───────────────────────────────────
     per_joint = results.get('per_joint_scores', {})
-    joint_warnings = _joint_warnings(per_joint, config.feedback_joint_warn_threshold)
+    joint_warnings = _joint_warnings(per_joint, config.joint_warn_threshold)
     feedback.extend(joint_warnings)
 
     # ── 3. Worst moment highlight ────────────────────────────────────
@@ -47,12 +50,12 @@ def generate_feedback(results, config):
         feedback.append(worst_msg)
 
     # ── 4. Trajectory warning ────────────────────────────────────────
-    traj_msg = _trajectory_warning(trajectory, config.feedback_direction_warn_threshold)
+    traj_msg = _trajectory_warning(trajectory, config.direction_warn_threshold)
     if traj_msg:
         feedback.append(traj_msg)
 
     # ── 5. Silhouette / shape warning ────────────────────────────────
-    shape_msg = _shape_warning(mask, config.feedback_mask_warn_threshold)
+    shape_msg = _shape_warning(mask, config.mask_warn_threshold)
     if shape_msg:
         feedback.append(shape_msg)
 
@@ -63,13 +66,13 @@ def generate_feedback(results, config):
         feedback.append(energy_msg)
 
     # ── 7. Positive reinforcement ────────────────────────────────────
-    praise = _praise(skeleton, trajectory, mask, config.feedback_praise_threshold)
+    praise = _praise(skeleton, trajectory, mask, config.praise_threshold)
     feedback.extend(praise)
 
     return feedback
 
 
-def extract_timeline_markers(results, config):
+def extract_timeline_markers(results):
     """
     Extract timestamps for the worst frames to be used by the frontend video player.
 

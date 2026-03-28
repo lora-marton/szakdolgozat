@@ -6,13 +6,16 @@ existing imports like `from model.config import DEFAULT_CONFIG` still work.
 """
 from model.config.extraction_config import ExtractionConfig, DEFAULT_CONFIG
 from model.config.comparison_config import ComparisonConfig, DEFAULT_COMPARISON_CONFIG
+from model.config.feedback_config import FeedbackConfig, DEFAULT_FEEDBACK_CONFIG
 from model.config.preprocessor_config import PreprocessorConfig, DEFAULT_PREPROCESSOR_CONFIG
 
 __all__ = [
     'ExtractionConfig',
     'ComparisonConfig',
+    'FeedbackConfig',
     'PreprocessorConfig',
     'DEFAULT_CONFIG',
     'DEFAULT_COMPARISON_CONFIG',
+    'DEFAULT_FEEDBACK_CONFIG',
     'DEFAULT_PREPROCESSOR_CONFIG',
 ]

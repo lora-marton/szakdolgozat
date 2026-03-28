@@ -10,11 +10,10 @@ import traceback
 from typing import Callable, Awaitable
 
 from model.comparison.comparator import compare_dances
+from model.extraction.extractor import data_extraction
 from model.feedback.feedback import extract_timeline_markers, generate_feedback
 from model.feedback.video_feedback import generate_feedback_video
-from model.config import DEFAULT_COMPARISON_CONFIG
-from model.config.comparison_config import ComparisonConfig
-from model.extraction.extractor import data_extraction
+from model.preprocessing.preprocessor import Preprocessor
 
 
 class VideoProcessor:
@@ -25,7 +24,6 @@ class VideoProcessor:
         teacher_file: str,
         student_file: str,
         output_dir: str = 'data',
-        config: ComparisonConfig | None = None,
         event_handler: Callable[[str], Awaitable[None]] | None = None,
     ) -> dict | None:
         """Process videos: extract poses, compare, generate feedback.
@@ -36,15 +34,12 @@ class VideoProcessor:
             teacher_file: Path to the reference dance video.
             student_file: Path to the student's dance video.
             output_dir: Directory for extracted data and results.
-            config: ComparisonConfig to use (defaults to DEFAULT_COMPARISON_CONFIG).
             event_handler: Optional async callback for SSE status updates.
 
         Returns:
             Dict with scores, feedback, timeline markers, and video filename,
             or None if processing failed.
         """
-        if config is None:
-            config = DEFAULT_COMPARISON_CONFIG
 
         async def send_status(msg: str) -> None:
             print(msg)
@@ -64,24 +59,29 @@ class VideoProcessor:
             await asyncio.to_thread(data_extraction, student_file, output_dir, 'student')
             await send_status("Student video extracted.")
 
+            await send_status("Preprocessing...")
+            teacher_data, student_data, preprocess_info = await asyncio.to_thread(
+                Preprocessor.preprocess, output_dir, teacher_file, student_file,
+            )
+            await send_status("Preprocessing complete.")
+
             await send_status("Comparing performances...")
             results = await asyncio.to_thread(
-                compare_dances, output_dir,
-                teacher_video=teacher_file, student_video=student_file,
-                config=config,
+                compare_dances, teacher_data, student_data,
             )
+            results['preprocess_info'] = preprocess_info
             await send_status(f"Comparison complete. Overall score: {results['overall_score']}%")
 
             await send_status("Generating feedback...")
-            results['feedback'] = generate_feedback(results, config)
-            results['timeline_markers'] = extract_timeline_markers(results, config)
+            results['feedback'] = generate_feedback(results)
+            results['timeline_markers'] = extract_timeline_markers(results)
             await send_status("Feedback ready.")
 
             await send_status("Generating feedback video...")
             video_path = await asyncio.to_thread(
                 generate_feedback_video,
                 teacher_file, student_file, output_dir,
-                results.get('preprocess_info'),
+                preprocess_info,
             )
             results['feedback_video'] = os.path.basename(video_path)
             await send_status("Feedback video ready.")
