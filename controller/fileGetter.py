@@ -14,7 +14,6 @@ from datetime import datetime
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
 import uvicorn
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -77,27 +76,8 @@ class FileGetter:
         with open(results_path, 'w', encoding='utf-8') as f:
             json.dump(serializable, f, indent=2)
 
-    @staticmethod
-    async def event_generator():
-        """Yield Server-Sent Events to the client.
-
-        Sends queued status messages or keep-alive comments.
-        """
-        while True:
-            try:
-                message = await asyncio.wait_for(status_queue.get(), timeout=1.0)
-                yield f"data: {message}\n\n"
-            except asyncio.TimeoutError:
-                yield ": keep-alive\n\n"
-
 
 # ── Endpoints ────────────────────────────────────────────────────────────
-
-
-@app.get("/events")
-async def events() -> StreamingResponse:
-    """Stream server-sent events to the client."""
-    return StreamingResponse(FileGetter.event_generator(), media_type="text/event-stream")
 
 
 @app.post("/dance_videos")

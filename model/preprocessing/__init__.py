@@ -1,1 +1,1 @@
-from model.preprocessing.preprocessor import preprocess
+from model.preprocessing.preprocessor import Preprocessor

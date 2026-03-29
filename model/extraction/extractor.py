@@ -86,9 +86,9 @@ class Extractor:
                 if debug and result.pose_landmarks:
                     Extractor._show_debug(frame, result, landmarks, norm_mask, config, vid_w, vid_h)
 
-                collected_raw.append(frame_raw)
+                collected_raw.append(landmarks)
                 collected_masks.append(norm_mask)
-                collected_trajectory.append(current_trajectory)
+                collected_trajectory.append(trajectory)
 
                 if debug and cv2.waitKey(1) & 0xFF == ord('q'):
                     break

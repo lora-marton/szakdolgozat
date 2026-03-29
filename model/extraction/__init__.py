@@ -1,1 +1,1 @@
-from model.extraction.extractor import data_extraction
+from model.extraction.extractor import Extractor
