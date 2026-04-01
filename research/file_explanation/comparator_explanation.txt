@@ -1,0 +1,174 @@
+comparator.py — Dance Comparison Orchestrator
+===============================================
+
+This file is the top-level entry point for the entire comparison phase.
+It receives preprocessed teacher and student data, runs all comparison
+metrics, and returns a flat results dict consumed by the feedback system
+and video renderer.
+
+The file contains a single class (Comparator) with one public static
+method (compare_dances). All actual computation is delegated to the
+metric classes — this file only wires them together and combines scores.
+
+
+================================================================================
+compare_dances — the pipeline
+================================================================================
+
+Input:
+  - teacher_data: dict with 'landmarks' (N, 33, 4), 'masks' (N, H, W),
+    'trajectory' (N, 2), and 'fps' (float). These come from the
+    preprocessor, which loaded them from HDF5, applied audio sync
+    offset, and trimmed to the active dance range.
+  - student_data: same structure.
+  - config: ComparisonConfig instance (optional, defaults to
+    DEFAULT_COMPARISON_CONFIG).
+
+Output:
+  A flat dict with all scores and per-frame details needed by the
+  feedback system and video renderer.
+
+
+Phase 1 — Temporal Alignment (DTW)
+──────────────────────────────────
+
+  alignment_path, timing_cost = DTW.align_sequences(
+      teacher_landmarks, student_landmarks,
+      config.dtw_joints, config.dtw_window_size,
+  )
+
+  DTW (Dynamic Time Warping) finds the optimal frame-to-frame mapping
+  between the two sequences, handling tempo differences. The result is
+  an alignment_path — a list of (teacher_frame_idx, student_frame_idx)
+  pairs — and a timing_cost representing how much warping was needed.
+
+  After DTW, we reindex all three data types (landmarks, masks,
+  trajectories) using the alignment path:
+
+    teacher_idx = [pair[0] for pair in alignment_path]
+    student_idx = [pair[1] for pair in alignment_path]
+    aligned_teacher_lm = teacher_data['landmarks'][teacher_idx]
+    aligned_student_lm = student_data['landmarks'][student_idx]
+
+  This uses numpy advanced indexing — passing a list of indices selects
+  those rows from the array, creating a new array where index i in the
+  teacher corresponds to index i in the student. Some frames may be
+  repeated (when DTW stretches a section) or skipped (when it compresses).
+  After this step, all aligned arrays have the same length and can be
+  compared element-wise.
+
+
+Phase 2 — Skeleton Comparison
+─────────────────────────────
+
+  skeleton_result = SkeletonMetrics.compute_skeleton_score(
+      aligned_teacher_lm, aligned_student_lm, config,
+  )
+
+  Single orchestrator call. Internally computes joint angles (16 angles)
+  and center of gravity for both dancers, scores them with exponential
+  decay, and returns:
+    - 'score': weighted combination (80% angles + 20% CoG), 0-100
+    - 'per_joint_scores': dict of 16 joint names → individual scores
+    - 'worst_frames': top 5 worst (frame, joint, error) tuples
+
+
+Phase 3 — Mask Comparison
+─────────────────────────
+
+  mask_result = MaskMetrics.compute_mask_score(
+      aligned_teacher_masks, aligned_student_masks, config,
+  )
+
+  Single orchestrator call. Internally smooths masks with EFD, compares
+  silhouette shapes with bidirectional DTM, compares movement energy
+  with optical flow, and returns:
+    - 'score': weighted combination (70% shape + 30% energy), 0-100
+    - 'per_frame_shape': per-frame DTM scores array
+    - 'energy_details': dict with per-frame energy data
+
+
+Phase 4 — Trajectory Comparison
+───────────────────────────────
+
+  trajectory_result = TrajectoryMetrics.compute_trajectory_score(
+      aligned_teacher_traj, aligned_student_traj,
+      weight_direction=..., weight_speed=...,
+  )
+
+  Single orchestrator call. Internally computes velocity vectors,
+  compares direction via cosine similarity and speed via min/max ratio,
+  and returns:
+    - 'score': weighted combination (75% direction + 25% speed), 0-100
+    - 'direction_similarity': raw direction metric (0-1) for feedback
+
+
+Phase 5 — Weighted Final Score
+──────────────────────────────
+
+  overall_score = (
+      0.55 * skeleton_result['score']
+      + 0.15 * trajectory_result['score']
+      + 0.30 * mask_result['score']
+  )
+
+  The weights reflect the relative importance of each metric:
+    - Skeleton (55%): most important — captures actual body pose accuracy,
+      joint angles, and weight distribution.
+    - Mask (30%): second — captures overall silhouette shape match and
+      movement energy similarity.
+    - Trajectory (15%): least — captures gross floor movement. A dancer
+      can be in roughly the right spot but have poor pose, so this gets
+      the lowest weight.
+
+  Weights come from config (weight_skeleton, weight_mask, weight_trajectory)
+  and sum to 1.0.
+
+
+================================================================================
+Return dict structure
+================================================================================
+
+  Key                     Source                  Used by
+  ──────────────────────  ──────────────────────  ──────────────────
+  overall_score           Phase E                 Feedback, UI
+  skeleton_score          Phase B                 Feedback
+  trajectory_score        Phase D                 Feedback
+  mask_score              Phase C                 Feedback
+  timing_cost             Phase A (DTW)           Feedback
+  alignment_path          Phase A (DTW)           Video renderer
+  per_joint_scores        Phase B (skeleton)      Feedback
+  worst_frames            Phase B (skeleton)      Feedback
+  per_frame_shape         Phase C (mask DTM)      Video renderer
+  energy_details          Phase C (mask energy)   Video renderer
+  direction_similarity    Phase D (trajectory)    Feedback
+  teacher_fps             Input data              Video renderer
+  student_fps             Input data              Video renderer
+
+  Additional keys are added downstream by video_processor.py:
+    preprocess_info       From Preprocessor       Video renderer
+    feedback              From generate_feedback   UI
+    timeline_markers      From extract_timeline    UI
+    feedback_video        From video renderer      UI
+
+
+================================================================================
+Design notes
+================================================================================
+
+  - All three metric calls follow the same pattern: single static method
+    call → returns a dict. This makes the comparator a clean, thin
+    orchestrator with no metric-specific logic.
+
+  - The comparator does not import numpy. All numerical work happens
+    inside the metric classes. The only computation here is the weighted
+    sum of three floats.
+
+  - Config is passed through to the metric classes — comparator does not
+    unpack individual config fields except for the top-level weights and
+    DTW parameters.
+
+  - The flat return dict is intentional. Nesting (e.g. results['skeleton']
+    ['per_joint']) would be cleaner structurally, but all downstream
+    consumers (feedback.py, video_feedback.py) expect flat keys. Keeping
+    it flat avoids breaking changes.

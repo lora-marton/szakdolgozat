@@ -1,0 +1,143 @@
+dtw.py — Line-by-Line Explanation
+====================================
+
+This file handles the temporal alignment of two dance sequences using
+Dynamic Time Warping (DTW). Before any scoring can happen, the pipeline
+needs to know which teacher frame corresponds to which student frame —
+the dancers may start at different times, move at different speeds, or
+pause at different moments. DTW finds the optimal frame-to-frame mapping.
+
+
+What is Dynamic Time Warping?
+-------------------------------
+DTW is a classic algorithm from speech recognition (Sakoe & Chiba, 1978)
+that finds the optimal alignment between two temporal sequences that may
+vary in speed. Unlike simple frame-to-frame pairing (frame 1 → frame 1,
+frame 2 → frame 2), DTW allows:
+
+- One-to-many matching: if the student holds a pose for longer than the
+  teacher, multiple student frames map to a single teacher frame.
+- Many-to-one matching: if the student moves faster, a single student
+  frame may cover what the teacher did over several frames.
+- Non-linear warping: the mapping can stretch and compress different parts
+  of the sequence independently.
+
+The algorithm builds a cost matrix where entry (i, j) represents the
+"distance" between teacher frame i and student frame j (measured as the
+Euclidean distance between their flattened joint positions). It then finds
+the path through this matrix with the lowest total cost, subject to
+constraints:
+
+1. The path must start at (0, 0) and end at (T-1, S-1).
+2. The path can only move forward (no going backwards in time).
+3. Adjacent path steps can only move right, down, or diagonally.
+
+The result is an alignment path — a list of (teacher_idx, student_idx)
+pairs — that maps every frame in both sequences to its best match.
+
+
+Sakoe-Chiba Banding
+----------------------
+Without constraints, DTW could match the beginning of one video to the
+end of another. The Sakoe-Chiba band limits how far apart matched frames
+can be. With window_size=120 (2 seconds at 60fps), a teacher frame at
+time t can only be matched to student frames within ±120 frames. This
+prevents pathological alignments and speeds up computation (the algorithm
+only fills a band of the cost matrix instead of the full matrix).
+
+
+Symmetric2 Step Pattern
+--------------------------
+The step pattern defines which moves are allowed along the path and how
+they are weighted. 'symmetric2' (also called "symmetric normalizable")
+weights diagonal steps as 2× and horizontal/vertical steps as 1×. This
+ensures that both sequences contribute equally to the alignment cost,
+regardless of which one is longer.
+
+
+Lines 1–6: Module Docstring
+-----------------------------
+Describes the file's purpose: DTW alignment of dance sequences, producing
+a frame mapping for downstream metrics.
+
+
+Lines 7–8: Imports
+-------------------
+- numpy (as np): Array slicing and reshaping in _flatten_joints().
+- dtw (from dtw-python): The DTW implementation. This is the dtw-python
+  package (pip install dtw-python), not to be confused with other DTW
+  libraries. It provides the cost matrix computation, Sakoe-Chiba banding,
+  step patterns, and the optimal path extraction.
+
+
+Lines 11–12: DTW Class
+-------------------------
+- A class that groups the alignment logic as static methods.
+- Contains no instance state — all methods are @staticmethod.
+- One public method (align_sequences) and one private helper
+  (_flatten_joints).
+
+
+Lines 14–19: align_sequences() Signature
+-------------------------------------------
+- @staticmethod: Called as DTW.align_sequences().
+- Parameters:
+    - teacher_landmarks (np.ndarray): Shape (T, 33, 4). T frames, 33
+      MediaPipe joints, 4 values per joint (x, y, z, visibility).
+    - student_landmarks (np.ndarray): Shape (S, 33, 4). S may differ
+      from T — that's the whole point of DTW.
+    - dtw_joints (tuple): Which of the 33 joints to use for alignment.
+      Default uses 12 major body joints (shoulders, elbows, wrists, hips,
+      knees, ankles). Excluding face/hand joints reduces noise.
+    - window_size (int): Sakoe-Chiba band width in frames. Default 120
+      (2 seconds at 60fps). Configurable via ComparisonConfig.
+- Returns: tuple[list, float] — the alignment path and normalized cost.
+
+
+Lines 39–40: Joint Flattening
+--------------------------------
+- Calls _flatten_joints() for both sequences. This extracts only the
+  selected joints' (x, y, z) coordinates and reshapes them into a 1D
+  vector per frame. For 12 joints × 3 coordinates = 36 dimensions per
+  frame. DTW computes Euclidean distance in this 36-dimensional space.
+
+
+Lines 42–49: DTW Execution
+-----------------------------
+- Calls the dtw() function from dtw-python.
+- student_flat is passed as the query, teacher_flat as the reference.
+  This convention means the alignment maps student frames onto the teacher
+  timeline.
+- step_pattern='symmetric2': Fair weighting for both sequences.
+- window_type='sakoechiba' with the configured window_size: Limits the
+  alignment band to prevent pathological matches.
+- keep_internals=False: Discards the full cost matrix and backtracking
+  data after path extraction, saving memory.
+
+
+Line 51: Alignment Path Construction
+---------------------------------------
+- alignment.index1 contains the student frame indices along the optimal
+  path, alignment.index2 contains the corresponding teacher indices.
+- Zips them into (teacher_idx, student_idx) pairs. The .tolist() converts
+  from numpy arrays to plain Python lists for JSON serialization later.
+
+
+Line 52: Normalized Cost
+---------------------------
+- alignment.normalizedDistance is the total path cost divided by the path
+  length. This makes the cost comparable across sequences of different
+  lengths. Lower values mean the two sequences have more similar timing.
+  Stored in the results dict as 'timing_cost'.
+
+
+Lines 58–70: _flatten_joints()
+---------------------------------
+- Takes the full (N, 33, 4) landmark array and a tuple of joint indices.
+- landmarks[:, joint_indices, :3]: Selects all frames, only the specified
+  joints, and only x/y/z (drops visibility). Result shape: (N, J, 3)
+  where J is the number of selected joints (typically 12).
+- .reshape(selected.shape[0], -1): Flattens the last two dimensions into
+  one. (N, 12, 3) becomes (N, 36). Each row is now a single 36-dimensional
+  feature vector representing the pose at that frame. DTW computes
+  Euclidean distance between these vectors to build the cost matrix.

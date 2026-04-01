@@ -750,3 +750,11 @@ solving issues with matching the start of the choreography:
 2. Motion energy detection  →  find active range in EACH video
 3. Take the INTERSECTION    →  keep only frames where BOTH are dancing
 4. Feed into DTW            →  align & compare
+
+
+
+
+
+potenciális megemlítendő algoritmusok:
+- one euro filter
+- dtw

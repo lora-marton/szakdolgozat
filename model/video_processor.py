@@ -9,7 +9,7 @@ import os
 import traceback
 from typing import Callable, Awaitable
 
-from model.comparison.comparator import compare_dances
+from model.comparison.comparator import Comparator
 from model.extraction.extractor import Extractor
 from model.feedback.feedback import extract_timeline_markers, generate_feedback
 from model.feedback.video_feedback import generate_feedback_video
@@ -67,7 +67,7 @@ class VideoProcessor:
 
             await send_status("Comparing performances...")
             results = await asyncio.to_thread(
-                compare_dances, teacher_data, student_data,
+                Comparator.compare_dances, teacher_data, student_data,
             )
             results['preprocess_info'] = preprocess_info
             await send_status(f"Comparison complete. Overall score: {results['overall_score']}%")

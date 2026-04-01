@@ -4,145 +4,186 @@ Skeleton-based comparison metrics: joint angles and center of gravity.
 import numpy as np
 
 
-def compute_joint_angles(landmarks, angle_definitions):
-    """
-    Calculate 2D joint angles for a sequence of frames.
+class SkeletonMetrics:
+    """Joint angle and center-of-gravity comparison between two pose sequences."""
 
-    For each (parent, joint, child) triplet, computes the angle at 'joint'
-    formed by the vectors joint→parent and joint→child using the dot product.
+    @staticmethod
+    def compute_skeleton_score(
+        teacher_landmarks: np.ndarray,
+        student_landmarks: np.ndarray,
+        config,
+    ) -> dict:
+        """Compute the combined skeleton comparison score.
 
-    Args:
-        landmarks: Array of shape (N, 33, 4) — [x, y, z, visibility] per landmark.
-        angle_definitions: Tuple of (parent, joint, child) index triplets.
+        Runs joint angle comparison and center-of-gravity comparison,
+        then combines them with configured weights.
 
-    Returns:
-        angles: Array of shape (N, len(angle_definitions)) — angles in degrees.
-    """
-    # Use only x, y (2D)
-    positions = landmarks[:, :, :2]  # (N, 33, 2)
+        Args:
+            teacher_landmarks: Array of shape (N, 33, 4), DTW-aligned.
+            student_landmarks: Array of shape (N, 33, 4), DTW-aligned.
+            config: ComparisonConfig instance.
 
-    num_frames = positions.shape[0]
-    num_angles = len(angle_definitions)
-    angles = np.zeros((num_frames, num_angles), dtype=np.float32)
+        Returns:
+            Dict with 'score' (0-100), 'per_joint_scores' dict,
+            and 'worst_frames' list.
+        """
+        teacher_angles = SkeletonMetrics._compute_joint_angles(
+            teacher_landmarks, config.joint_angles,
+        )
+        student_angles = SkeletonMetrics._compute_joint_angles(
+            student_landmarks, config.joint_angles,
+        )
+        angle_score, per_joint_scores, worst_frames = SkeletonMetrics._compare_angles(
+            teacher_angles, student_angles, config.joint_tolerances, config.angle_sigma,
+        )
 
-    for j, (parent, joint, child) in enumerate(angle_definitions):
-        vec_a = positions[:, parent, :] - positions[:, joint, :]  # (N, 2)
-        vec_b = positions[:, child, :] - positions[:, joint, :]   # (N, 2)
+        teacher_cog = SkeletonMetrics._compute_cog(teacher_landmarks, config.cog_weights)
+        student_cog = SkeletonMetrics._compute_cog(student_landmarks, config.cog_weights)
+        cog_score = SkeletonMetrics._compare_cog(teacher_cog, student_cog, config.cog_sigma)
 
-        # Dot product and magnitudes
-        dot = (vec_a * vec_b).sum(axis=-1)  # (N,)
-        mag_a = np.linalg.norm(vec_a, axis=-1)  # (N,)
-        mag_b = np.linalg.norm(vec_b, axis=-1)  # (N,)
+        skeleton_score = config.weight_angles * angle_score + config.weight_cog * cog_score
 
-        # Avoid division by zero
-        denom = mag_a * mag_b
-        denom = np.where(denom == 0, 1e-8, denom)
+        return {
+            'score': round(skeleton_score, 1),
+            'per_joint_scores': per_joint_scores,
+            'worst_frames': worst_frames,
+        }
 
-        cos_angle = np.clip(dot / denom, -1.0, 1.0)
-        angles[:, j] = np.degrees(np.arccos(cos_angle))
+    @staticmethod
+    def _compute_joint_angles(landmarks: np.ndarray, angle_definitions: tuple) -> np.ndarray:
+        """Calculate 2D joint angles for a sequence of frames.
 
-    return angles
+        For each (parent, joint, child) triplet, computes the angle at the
+        vertex joint formed by vectors joint->parent and joint->child using
+        the dot-product formula.
 
+        Args:
+            landmarks: Array of shape (N, 33, 4) with x, y, z, visibility per landmark.
+            angle_definitions: Tuple of (parent, joint, child) index triplets.
 
-def compute_cog(landmarks, cog_weights):
-    """
-    Calculate the weighted center of gravity for each frame.
+        Returns:
+            Array of shape (N, len(angle_definitions)) with angles in degrees.
+        """
+        positions = landmarks[:, :, :2]
 
-    Args:
-        landmarks: Array of shape (N, 33, 4) — landmark data.
-        cog_weights: Dict mapping joint index → body segment weight.
+        num_frames = positions.shape[0]
+        num_angles = len(angle_definitions)
+        angles = np.zeros((num_frames, num_angles), dtype=np.float32)
 
-    Returns:
-        cog: Array of shape (N, 2) — center of gravity (x, y) per frame.
-    """
-    positions = landmarks[:, :, :2]  # (N, 33, 2)
+        for j, (parent, joint, child) in enumerate(angle_definitions):
+            vec_a = positions[:, parent, :] - positions[:, joint, :]
+            vec_b = positions[:, child, :] - positions[:, joint, :]
 
-    joint_indices = list(cog_weights.keys())
-    weights = np.array([cog_weights[i] for i in joint_indices], dtype=np.float32)  # (J,)
-    weight_sum = weights.sum()
+            dot = (vec_a * vec_b).sum(axis=-1)
+            mag_a = np.linalg.norm(vec_a, axis=-1)
+            mag_b = np.linalg.norm(vec_b, axis=-1)
 
-    selected = positions[:, joint_indices, :]  # (N, J, 2)
+            denom = mag_a * mag_b
+            denom = np.where(denom == 0, 1e-8, denom)
 
-    # Weighted average: sum(weight_i * pos_i) / sum(weights)
-    cog = np.einsum('j,njd->nd', weights, selected) / weight_sum  # (N, 2)
+            cos_angle = np.clip(dot / denom, -1.0, 1.0)
+            angles[:, j] = np.degrees(np.arccos(cos_angle))
 
-    return cog
+        return angles
 
+    @staticmethod
+    def _compute_cog(landmarks: np.ndarray, cog_weights: dict) -> np.ndarray:
+        """Calculate the weighted center of gravity for each frame.
 
-def compare_angles(teacher_angles, student_angles, tolerances, sigma=25.0):
-    """
-    Score the similarity of joint angles using exponential decay penalty.
+        Args:
+            landmarks: Array of shape (N, 33, 4) with landmark data.
+            cog_weights: Dict mapping joint index to body-segment weight.
 
-    Within tolerance: score = 100.
-    Beyond tolerance: score = 100 * exp(-((error - tolerance) / sigma)²).
+        Returns:
+            Array of shape (N, 2) with center of gravity (x, y) per frame.
+        """
+        positions = landmarks[:, :, :2]
 
-    Args:
-        teacher_angles: Array of shape (N, J) — teacher joint angles in degrees.
-        student_angles: Array of shape (N, J) — student joint angles (DTW-aligned).
-        tolerances: Dict of joint name → tolerance in degrees.
-        sigma: Decay parameter — error beyond tolerance at which score drops to ~37%.
+        joint_indices = list(cog_weights.keys())
+        weights = np.array([cog_weights[i] for i in joint_indices], dtype=np.float32)
+        weight_sum = weights.sum()
 
-    Returns:
-        score: Float 0-100 — overall skeleton accuracy score.
-        per_joint_scores: Dict of joint name → score (0-100).
-        worst_frames: List of (frame_idx, joint_name, error_degrees) for feedback.
-    """
-    joint_names = list(tolerances.keys())
-    num_joints = len(joint_names)
-    num_frames = teacher_angles.shape[0]
+        selected = positions[:, joint_indices, :]
 
-    errors = np.abs(teacher_angles - student_angles)  # (N, J)
+        cog = np.einsum('j,njd->nd', weights, selected) / weight_sum
 
-    # Build per-frame, per-joint scores
-    frame_scores = np.zeros_like(errors)  # (N, J)
+        return cog
 
-    for j, name in enumerate(joint_names):
-        tol = tolerances[name]
-        excess = np.maximum(0, errors[:, j] - tol)
-        frame_scores[:, j] = 100.0 * np.exp(-((excess / sigma) ** 2))
+    @staticmethod
+    def _compare_angles(
+        teacher_angles: np.ndarray,
+        student_angles: np.ndarray,
+        tolerances: dict,
+        sigma: float,
+    ) -> tuple[float, dict, list]:
+        """Score the similarity of joint angles using exponential decay.
 
-    # Per-joint average across frames
-    per_joint_scores = {}
-    for j, name in enumerate(joint_names):
-        per_joint_scores[name] = round(float(frame_scores[:, j].mean()), 1)
+        Within tolerance the score is 100. Beyond tolerance the score decays
+        as 100 * exp(-((error - tolerance) / sigma)^2).
 
-    # Overall score: average across all joints
-    score = float(frame_scores.mean())
+        Args:
+            teacher_angles: Array of shape (N, J) with teacher angles in degrees.
+            student_angles: Array of shape (N, J) with student angles (DTW-aligned).
+            tolerances: Dict of joint name to tolerance in degrees.
+            sigma: Decay parameter — error beyond tolerance at which score drops to ~37%.
 
-    # Worst frames: find the top offenders for feedback
-    worst_frames = []
-    num_worst = min(5, num_frames)  # Top 5 worst moments
+        Returns:
+            Tuple of (overall_score, per_joint_scores dict, worst_frames list).
+        """
+        joint_names = list(tolerances.keys())
+        num_frames = teacher_angles.shape[0]
 
-    # Mean score per frame across joints
-    mean_frame_scores = frame_scores.mean(axis=1)  # (N,)
-    worst_indices = np.argsort(mean_frame_scores)[:num_worst]
+        errors = np.abs(teacher_angles - student_angles)
 
-    for idx in worst_indices:
-        worst_joint_j = np.argmax(errors[idx])
-        worst_frames.append((
-            int(idx),
-            joint_names[worst_joint_j % len(joint_names)],
-            round(float(errors[idx, worst_joint_j]), 1),
-        ))
+        frame_scores = np.zeros_like(errors)
 
-    return round(score, 1), per_joint_scores, worst_frames
+        for j, name in enumerate(joint_names):
+            tol = tolerances[name]
+            excess = np.maximum(0, errors[:, j] - tol)
+            frame_scores[:, j] = 100.0 * np.exp(-((excess / sigma) ** 2))
 
+        per_joint_scores = {}
+        for j, name in enumerate(joint_names):
+            per_joint_scores[name] = round(float(frame_scores[:, j].mean()), 1)
 
-def compare_cog(teacher_cog, student_cog, sigma=15.0):
-    """
-    Score the similarity of center-of-gravity positions.
+        score = float(frame_scores.mean())
 
-    Uses exponential decay on the Euclidean distance between teacher and student CoG.
+        worst_frames = []
+        num_worst = min(5, num_frames)
 
-    Args:
-        teacher_cog: Array of shape (N, 2) — teacher CoG per frame.
-        student_cog: Array of shape (N, 2) — student CoG per frame (DTW-aligned).
-        sigma: Distance (in coordinate units) at which score drops to ~37%.
+        mean_frame_scores = frame_scores.mean(axis=1)
+        worst_indices = np.argsort(mean_frame_scores)[:num_worst]
 
-    Returns:
-        score: Float 0-100 — CoG similarity score.
-    """
-    distances = np.linalg.norm(teacher_cog - student_cog, axis=-1)  # (N,)
-    frame_scores = 100.0 * np.exp(-((distances / sigma) ** 2))
-    score = float(frame_scores.mean())
-    return round(score, 1)
+        for idx in worst_indices:
+            worst_joint_j = np.argmax(errors[idx])
+            worst_frames.append((
+                int(idx),
+                joint_names[worst_joint_j],
+                round(float(errors[idx, worst_joint_j]), 1),
+            ))
+
+        return round(score, 1), per_joint_scores, worst_frames
+
+    @staticmethod
+    def _compare_cog(
+        teacher_cog: np.ndarray,
+        student_cog: np.ndarray,
+        sigma: float,
+    ) -> float:
+        """Score the similarity of center-of-gravity positions.
+
+        Uses exponential decay on the Euclidean distance between teacher
+        and student CoG per frame.
+
+        Args:
+            teacher_cog: Array of shape (N, 2) with teacher CoG per frame.
+            student_cog: Array of shape (N, 2) with student CoG per frame (DTW-aligned).
+            sigma: Distance in coordinate units at which score drops to ~37%.
+
+        Returns:
+            CoG similarity score (0-100).
+        """
+        distances = np.linalg.norm(teacher_cog - student_cog, axis=-1)
+        frame_scores = 100.0 * np.exp(-((distances / sigma) ** 2))
+        score = float(frame_scores.mean())
+        return round(score, 1)

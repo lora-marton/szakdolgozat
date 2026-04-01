@@ -1,105 +1,118 @@
 """
 Trajectory comparison: direction and speed analysis of floor movement.
-
-Compares the movement patterns of teacher and student by analysing
-velocity vectors — direction via cosine similarity and speed via ratio.
-Stationary frames (where both dancers are nearly still) are filtered out
-to avoid noisy comparisons.
 """
 import numpy as np
 
 
-def compare_trajectories(teacher_trajectory, student_trajectory,
-                         weight_direction, weight_speed,
-                         min_speed_threshold=1e-4):
-    """
-    Compare floor movement paths between teacher and student.
+class TrajectoryMetrics:
+    """Movement path comparison between two pose sequences."""
 
-    Combines direction similarity (cosine of velocity vectors) and
-    speed similarity (ratio of velocity magnitudes) into a single score.
-    Frames where both dancers are nearly stationary are excluded from scoring.
+    @staticmethod
+    def compute_trajectory_score(
+        teacher_trajectory: np.ndarray,
+        student_trajectory: np.ndarray,
+        weight_direction: float,
+        weight_speed: float,
+        min_speed_threshold: float = 1e-4,
+    ) -> dict:
+        """Compute the combined trajectory comparison score.
 
-    Args:
-        teacher_trajectory: Array of shape (N, 2) — teacher hip positions.
-        student_trajectory: Array of shape (N, 2) — student hip positions (DTW-aligned).
-        weight_direction: Weight for direction sub-score (default 0.75).
-        weight_speed: Weight for speed sub-score (default 0.25).
-        min_speed_threshold: Minimum velocity magnitude to count as moving.
-            Frames where BOTH dancers are below this are skipped.
+        Compares velocity vectors between teacher and student using
+        direction similarity (cosine) and speed similarity (min/max ratio),
+        then combines them with configured weights.
 
-    Returns:
-        score: Float 0-100 — trajectory similarity score.
-        direction_similarity: Float 0-1 — average cosine similarity of velocity vectors.
-    """
-    # Compute velocity vectors (frame-to-frame displacement)
-    teacher_vel = np.diff(teacher_trajectory, axis=0)  # (N-1, 2)
-    student_vel = np.diff(student_trajectory, axis=0)  # (N-1, 2)
+        Args:
+            teacher_trajectory: Array of shape (N, 2) with teacher hip positions.
+            student_trajectory: Array of shape (N, 2) with student hip positions (DTW-aligned).
+            weight_direction: Weight for the direction sub-score.
+            weight_speed: Weight for the speed sub-score.
+            min_speed_threshold: Minimum velocity magnitude to count as moving.
 
-    teacher_speed = np.linalg.norm(teacher_vel, axis=-1)  # (N-1,)
-    student_speed = np.linalg.norm(student_vel, axis=-1)  # (N-1,)
+        Returns:
+            Dict with 'score' (0-100) and 'direction_similarity' (0-1).
+        """
+        teacher_vel = np.diff(teacher_trajectory, axis=0)
+        student_vel = np.diff(student_trajectory, axis=0)
 
-    # Identify active frames (at least one dancer is moving)
-    active_mask = (teacher_speed > min_speed_threshold) | (student_speed > min_speed_threshold)
+        teacher_speed = np.linalg.norm(teacher_vel, axis=-1)
+        student_speed = np.linalg.norm(student_vel, axis=-1)
 
-    if not active_mask.any():
-        # Both dancers are stationary the entire time — perfect "match"
-        return 100.0, 1.0
+        active = (teacher_speed > min_speed_threshold) | (student_speed > min_speed_threshold)
 
-    # --- Direction similarity (cosine) on active frames ---
-    direction_scores = _direction_similarity(
-        teacher_vel[active_mask], student_vel[active_mask],
-        teacher_speed[active_mask], student_speed[active_mask],
-    )
-    mean_direction = float(direction_scores.mean())
+        if not active.any():
+            return {'score': 100.0, 'direction_similarity': 1.0}
 
-    # --- Speed similarity (ratio) on active frames ---
-    speed_scores = _speed_similarity(
-        teacher_speed[active_mask], student_speed[active_mask],
-    )
-    mean_speed = float(speed_scores.mean())
+        direction_scores = TrajectoryMetrics._direction_similarity(
+            teacher_vel[active], student_vel[active],
+            teacher_speed[active], student_speed[active],
+        )
+        mean_direction = float(direction_scores.mean())
 
-    # --- Combined score ---
-    score = (weight_direction * mean_direction + weight_speed * mean_speed) * 100.0
+        speed_scores = TrajectoryMetrics._speed_similarity(
+            teacher_speed[active], student_speed[active],
+        )
+        mean_speed = float(speed_scores.mean())
 
-    return round(score, 1), round(mean_direction, 3)
+        score = (weight_direction * mean_direction + weight_speed * mean_speed) * 100.0
 
+        return {
+            'score': round(score, 1),
+            'direction_similarity': round(mean_direction, 3),
+        }
 
-# ── Helpers ──────────────────────────────────────────────────────────────
+    @staticmethod
+    def _direction_similarity(
+        teacher_vel: np.ndarray,
+        student_vel: np.ndarray,
+        teacher_speed: np.ndarray,
+        student_speed: np.ndarray,
+    ) -> np.ndarray:
+        """Compute per-frame cosine similarity between velocity vectors.
 
+        Returns values in [0, 1]: 1 means same direction, 0 means opposite.
+        When one dancer is stationary, similarity is 0.
 
-def _direction_similarity(teacher_vel, student_vel, teacher_speed, student_speed):
-    """
-    Compute per-frame cosine similarity between velocity vectors.
+        Args:
+            teacher_vel: Array of shape (M, 2) with teacher velocity vectors.
+            student_vel: Array of shape (M, 2) with student velocity vectors.
+            teacher_speed: Array of shape (M,) with teacher speed magnitudes.
+            student_speed: Array of shape (M,) with student speed magnitudes.
 
-    Returns values in [0, 1]:  1 = same direction, 0 = opposite.
-    When one dancer is stationary, similarity is 0 (they should be moving).
-    """
-    # Dot product per frame
-    dot = (teacher_vel * student_vel).sum(axis=-1)  # (M,)
-    denom = teacher_speed * student_speed
+        Returns:
+            Array of shape (M,) with similarity scores in [0, 1].
+        """
+        dot = (teacher_vel * student_vel).sum(axis=-1)
+        denom = teacher_speed * student_speed
 
-    # Where one is stationary: direction score = 0
-    both_moving = denom > 0
-    cosine = np.zeros_like(dot)
-    cosine[both_moving] = dot[both_moving] / denom[both_moving]
+        both_moving = denom > 0
+        cosine = np.zeros_like(dot)
+        cosine[both_moving] = dot[both_moving] / denom[both_moving]
 
-    # Map from [-1, 1] → [0, 1]:  same direction=1, opposite=0
-    similarity = (cosine + 1.0) / 2.0
+        similarity = (cosine + 1.0) / 2.0
 
-    return similarity
+        return similarity
 
+    @staticmethod
+    def _speed_similarity(
+        teacher_speed: np.ndarray,
+        student_speed: np.ndarray,
+    ) -> np.ndarray:
+        """Compute per-frame speed ratio as min/max of the two speeds.
 
-def _speed_similarity(teacher_speed, student_speed):
-    """
-    Compute per-frame speed ratio: min/max of the two speeds.
+        Returns values in [0, 1]: 1 means same speed, 0 means one stationary.
 
-    Returns values in [0, 1]:  1 = same speed, 0 = one stationary.
-    """
-    max_speed = np.maximum(teacher_speed, student_speed)
-    min_speed = np.minimum(teacher_speed, student_speed)
+        Args:
+            teacher_speed: Array of shape (M,) with teacher speed magnitudes.
+            student_speed: Array of shape (M,) with student speed magnitudes.
 
-    ratio = np.zeros_like(max_speed)
-    nonzero = max_speed > 0
-    ratio[nonzero] = min_speed[nonzero] / max_speed[nonzero]
+        Returns:
+            Array of shape (M,) with speed ratio scores in [0, 1].
+        """
+        max_speed = np.maximum(teacher_speed, student_speed)
+        min_speed = np.minimum(teacher_speed, student_speed)
 
-    return ratio
+        ratio = np.zeros_like(max_speed)
+        nonzero = max_speed > 0
+        ratio[nonzero] = min_speed[nonzero] / max_speed[nonzero]
+
+        return ratio

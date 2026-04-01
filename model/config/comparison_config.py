@@ -30,14 +30,7 @@ class ComparisonConfig:
         27, 28,
     )
 
-    joint_tolerances: dict = field(default_factory=lambda: {
-        'hips': 5.0,
-        'knees': 15.0,
-        'elbows': 20.0,
-        'wrists': 25.0,
-        'shoulders': 10.0,
-        'ankles': 15.0,
-    })
+    dtw_window_size: int = 120
 
     joint_angles: tuple = (
         (11, 13, 15),
@@ -46,7 +39,36 @@ class ComparisonConfig:
         (24, 26, 28),
         (13, 11, 23),
         (14, 12, 24),
+        (11, 23, 25),
+        (12, 24, 26),
+        (13, 15, 19),
+        (14, 16, 20),
+        (25, 27, 31),
+        (26, 28, 32),
+        (12, 11, 23),
+        (11, 12, 24),
+        (11, 23, 24),
+        (12, 24, 23),
     )
+
+    joint_tolerances: dict = field(default_factory=lambda: {
+        'left_elbow': 15.0,
+        'right_elbow': 15.0,
+        'left_knee': 15.0,
+        'right_knee': 15.0,
+        'left_shoulder': 10.0,
+        'right_shoulder': 10.0,
+        'left_hip': 10.0,
+        'right_hip': 10.0,
+        'left_wrist': 20.0,
+        'right_wrist': 20.0,
+        'left_ankle': 20.0,
+        'right_ankle': 20.0,
+        'left_inner_shoulder': 10.0,
+        'right_inner_shoulder': 10.0,
+        'left_inner_hip': 10.0,
+        'right_inner_hip': 10.0,
+    })
 
     cog_weights: dict = field(default_factory=lambda: {
         0: 0.08,

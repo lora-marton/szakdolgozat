@@ -1,1 +1,1 @@
-from model.comparison.comparator import compare_dances
+from model.comparison.comparator import Comparator

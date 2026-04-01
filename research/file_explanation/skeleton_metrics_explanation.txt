@@ -1,0 +1,304 @@
+skeleton_metrics.py — Skeleton-Based Comparison Metrics
+========================================================
+
+This file contains the core pose-comparison logic. It measures how closely a
+student's body pose matches the teacher's by comparing joint angles and
+center of gravity across all DTW-aligned frames.
+
+The file has one public orchestrator (compute_skeleton_score) and four
+private helpers: two "compute" functions (extract a numeric representation
+from raw landmarks) and two "compare" functions (score the similarity
+between teacher and student representations).
+
+
+================================================================================
+Function ordering and visibility
+================================================================================
+
+  compute_skeleton_score   public    Orchestrator — called from comparator.py
+  _compute_joint_angles    private   Compute angle arrays from landmarks
+  _compute_cog             private   Compute center of gravity from landmarks
+  _compare_angles          private   Score angle similarity with decay
+  _compare_cog             private   Score CoG similarity with decay
+
+
+================================================================================
+compute_skeleton_score — orchestrator
+================================================================================
+
+Purpose: Single entry point for all skeleton comparison logic. Called from
+comparator.py with aligned teacher/student landmarks and a config object.
+
+Step by step:
+
+  1. Compute joint angles for both teacher and student via _compute_joint_angles.
+  2. Score angle similarity via _compare_angles → angle_score, per_joint, worst.
+  3. Compute center of gravity for both via _compute_cog.
+  4. Score CoG similarity via _compare_cog → cog_score.
+  5. Weighted combination:
+       skeleton_score = 0.80 * angle_score + 0.20 * cog_score
+     (weights from config.weight_angles and config.weight_cog)
+
+Returns a dict with:
+  - 'score': combined skeleton score (0-100)
+  - 'per_joint_scores': dict of joint name → score
+  - 'worst_frames': list of worst (frame, joint, error) tuples
+
+This mirrors the pattern used by MaskMetrics.compute_mask_score — both
+return a dict and keep all internal wiring private. Comparator.py only
+needs one call per metric type.
+
+
+================================================================================
+1. _compute_joint_angles
+================================================================================
+
+Purpose: Convert raw landmark positions into meaningful joint angles.
+
+Input:
+  - landmarks: shape (N, 33, 4) — N frames, 33 MediaPipe landmarks, 4 values
+    per landmark (x, y, z, visibility).
+  - angle_definitions: tuple of (parent, joint, child) index triplets. Each
+    triplet defines one angle to measure. The indices refer to MediaPipe
+    landmark numbers (e.g. 11 = left shoulder, 13 = left elbow, 15 = left wrist).
+
+Output:
+  - angles: shape (N, num_angles) — one angle in degrees per joint per frame.
+
+Step by step:
+
+  1. Strip to 2D by taking only x and y columns:
+       positions = landmarks[:, :, :2]          → shape (N, 33, 2)
+     We discard z because the comparison is done in screen-space 2D. The z
+     coordinate from MediaPipe is a relative depth estimate and is less
+     reliable than x/y.
+
+  2. For each angle triplet (parent, joint, child):
+
+     a) Compute two vectors originating at the vertex "joint":
+          vec_a = positions[:, parent, :] - positions[:, joint, :]
+          vec_b = positions[:, child, :]  - positions[:, joint, :]
+        Both have shape (N, 2) — one 2D vector per frame.
+
+     b) Compute the dot product of vec_a and vec_b:
+          dot = (vec_a * vec_b).sum(axis=-1)      → shape (N,)
+        Element-wise multiply gives (N, 2), summing the last axis collapses
+        to (N,). This is equivalent to a·b = ax*bx + ay*by.
+
+     c) Compute the magnitudes (lengths) of both vectors:
+          mag_a = norm(vec_a)                      → shape (N,)
+          mag_b = norm(vec_b)                      → shape (N,)
+
+     d) Guard against division by zero:
+          denom = mag_a * mag_b
+          denom = where(denom == 0, 1e-8, denom)
+        If a landmark sits exactly on the joint (zero-length vector), the
+        denominator would be zero. Replacing with a tiny epsilon avoids NaN.
+
+     e) Compute the angle via the dot-product formula:
+          cos(θ) = (a · b) / (|a| * |b|)
+        Clip to [-1, 1] before arccos to handle floating-point overshoot,
+        then convert radians to degrees.
+
+  The result is a (N, 16) array when using the default 16 joint angle
+  definitions from ComparisonConfig.
+
+Current joint angle definitions (from comparison_config.py):
+  Index  Triplet         Name                  What it measures
+  ─────  ──────────────  ────────────────────  ──────────────────────────────
+   0     (11, 13, 15)    left_elbow            Bend of the left arm
+   1     (12, 14, 16)    right_elbow           Bend of the right arm
+   2     (23, 25, 27)    left_knee             Bend of the left leg
+   3     (24, 26, 28)    right_knee            Bend of the right leg
+   4     (13, 11, 23)    left_shoulder         Left arm raise angle
+   5     (14, 12, 24)    right_shoulder        Right arm raise angle
+   6     (11, 23, 25)    left_hip              Left leg raise angle
+   7     (12, 24, 26)    right_hip             Right leg raise angle
+   8     (13, 15, 19)    left_wrist            Left hand bend/flex
+   9     (14, 16, 20)    right_wrist           Right hand bend/flex
+  10     (25, 27, 31)    left_ankle            Left foot flex
+  11     (26, 28, 32)    right_ankle           Right foot flex
+  12     (12, 11, 23)    left_inner_shoulder   Left side of chest opening
+  13     (11, 12, 24)    right_inner_shoulder  Right side of chest opening
+  14     (11, 23, 24)    left_inner_hip        Left side of pelvis tilt
+  15     (12, 24, 23)    right_inner_hip       Right side of pelvis tilt
+
+The "inner" angles capture torso shape — how the chest opens/closes and how
+the pelvis tilts side to side. These are important for detecting upper-body
+lean and hip sway that the outer joint angles would miss.
+
+
+================================================================================
+2. _compute_cog
+================================================================================
+
+Purpose: Estimate the body's center of gravity (CoG) per frame using a
+weighted average of selected joint positions.
+
+Input:
+  - landmarks: shape (N, 33, 4)
+  - cog_weights: dict mapping landmark index → body-segment weight.
+
+Output:
+  - cog: shape (N, 2) — (x, y) center of gravity per frame.
+
+Step by step:
+
+  1. Strip to 2D positions: shape (N, 33, 2).
+
+  2. Extract joint indices and their weights from the dict:
+       joint_indices = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28]
+       weights = [0.08, 0.06, 0.06, 0.03, 0.03, 0.02, 0.02,
+                  0.15, 0.15, 0.06, 0.06, 0.02, 0.02]
+     These approximate real biomechanical segment masses. The hips (23, 24)
+     have the highest weight (0.15 each) because the pelvis region holds the
+     most body mass. The head (0) gets 0.08. Extremities (wrists, ankles)
+     get small weights.
+
+  3. Select only the relevant landmark positions:
+       selected = positions[:, joint_indices, :]     → shape (N, 13, 2)
+
+  4. Compute weighted average using Einstein summation:
+       cog = einsum('j,njd->nd', weights, selected) / weight_sum
+
+     What einsum does here:
+       - 'j' indexes the 13 joints
+       - 'njd' is the selected positions: n=frame, j=joint, d=xy dimension
+       - 'nd' is the output: n=frame, d=xy dimension
+       - For each frame n and dimension d, it computes:
+           sum over j of (weights[j] * selected[n, j, d])
+       - Dividing by weight_sum (0.76) normalizes because the weights don't
+         sum to 1.0 — they represent relative proportions of total body mass
+         covered by these 13 landmarks (not all 33).
+
+  The result is a single (x, y) point per frame representing where the
+  body's mass center is. This tracks overall body position and sway.
+
+
+================================================================================
+3. _compare_angles
+================================================================================
+
+Purpose: Score how well the student's joint angles match the teacher's,
+with per-joint tolerance zones and exponential decay penalties.
+
+Input:
+  - teacher_angles: shape (N, J) — angles in degrees (DTW-aligned).
+  - student_angles: shape (N, J) — same shape, same alignment.
+  - tolerances: dict of joint name → tolerance in degrees.
+  - sigma: decay parameter (configured as angle_sigma = 35.0).
+
+Output:
+  - overall_score: float 0-100.
+  - per_joint_scores: dict of joint name → score 0-100.
+  - worst_frames: list of up to 5 (frame_idx, joint_name, error_degrees) tuples.
+
+Scoring formula:
+
+  For each frame and each joint:
+    error = |teacher_angle - student_angle|
+
+    If error <= tolerance:
+      score = 100  (perfect — within acceptable range)
+
+    If error > tolerance:
+      excess = error - tolerance
+      score = 100 * exp(-(excess / sigma)²)
+
+  This is a Gaussian-shaped decay. The tolerance creates a "free zone" where
+  small differences don't penalize at all. Beyond that, the penalty grows
+  smoothly. With sigma = 35.0:
+    - 35° beyond tolerance → score ≈ 37%
+    - 50° beyond tolerance → score ≈ 12%
+    - 70° beyond tolerance → score ≈ 2%
+
+  The tolerances differ per joint type:
+    - Elbows/knees: 15° (moderate — natural variance in limb bending)
+    - Shoulders/hips/inner joints: 10° (tighter — torso pose is more stable)
+    - Wrists/ankles: 20° (looser — extremities are noisy and less important)
+
+Step by step:
+
+  1. Compute absolute error matrix: shape (N, J).
+
+  2. For each joint j, compute excess beyond tolerance, then apply the
+     Gaussian decay formula. Results go into frame_scores: shape (N, J).
+
+  3. Per-joint scores: average each column across all frames.
+
+  4. Overall score: average of the entire (N, J) matrix — this weights all
+     joints equally and all frames equally.
+
+  5. Worst frames detection:
+     a) Compute mean score per frame across all joints → shape (N,).
+     b) Sort ascending (lowest scores = worst frames).
+     c) Take the top 5 worst frames.
+     d) For each worst frame, find the joint with the highest absolute error
+        using argmax on the error row.
+     e) Return (frame_index, joint_name, error_in_degrees) for each.
+
+  These worst frames are used by the feedback system to tell the student
+  exactly when and where they deviated most.
+
+
+================================================================================
+4. _compare_cog
+================================================================================
+
+Purpose: Score how closely the student's center of gravity tracks the
+teacher's across the dance.
+
+Input:
+  - teacher_cog: shape (N, 2) — (x, y) per frame (DTW-aligned).
+  - student_cog: shape (N, 2) — same shape, same alignment.
+  - sigma: decay parameter (configured as cog_sigma = 0.08).
+
+Output:
+  - score: float 0-100.
+
+Step by step:
+
+  1. Compute Euclidean distance per frame:
+       distances = norm(teacher_cog - student_cog, axis=-1)    → shape (N,)
+     This is the straight-line distance between the two CoG points in
+     normalized [0, 1] coordinate space.
+
+  2. Apply Gaussian decay (no tolerance zone — any deviation is penalized):
+       frame_scores = 100 * exp(-(distances / sigma)²)
+
+     With sigma = 0.08 (8% of frame width):
+       - 0.04 apart (4% of frame) → score ≈ 78%
+       - 0.08 apart (8% of frame) → score ≈ 37%
+       - 0.16 apart (16% of frame) → score ≈ 2%
+
+     This is intentionally sensitive. The CoG should track closely — if the
+     teacher leans left and the student doesn't, even a small spatial offset
+     indicates a significant posture difference.
+
+  3. Average all frame scores to get the final CoG score.
+
+  Note: Unlike _compare_angles, there is no tolerance zone here. CoG
+  comparison has no "free" error margin because the center of mass is a
+  single aggregated metric, not a noisy per-joint measurement. Any shift
+  indicates a real difference in body positioning.
+
+
+================================================================================
+How this fits into comparator.py
+================================================================================
+
+Comparator calls a single method:
+
+  skeleton_result = SkeletonMetrics.compute_skeleton_score(
+      aligned_teacher_lm, aligned_student_lm, config,
+  )
+
+All internal wiring (angles, CoG, weighting) is hidden. Comparator
+accesses the results via dict keys:
+
+  skeleton_result['score']            → combined 0-100 score
+  skeleton_result['per_joint_scores'] → per-joint breakdown
+  skeleton_result['worst_frames']     → worst moments for feedback
+
+The skeleton score then feeds into the final weighted overall score
+along with mask and trajectory scores.
