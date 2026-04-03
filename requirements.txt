@@ -1,11 +1,13 @@
 dtw-python
 fastapi
 h5py
+imageio-ffmpeg
 mediapipe
 moviepy
 numpy
 opencv-python
 pyefd
+pytest
 python-multipart
 scipy
 uvicorn[standard]

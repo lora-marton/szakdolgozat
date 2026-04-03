@@ -34,6 +34,7 @@ free good quality photos and videos: Pexels, Pixabay
 
 session starter: .\venv\Scripts\activate
 
+dependencies: pip install -r requirements.txt
 
 
 
