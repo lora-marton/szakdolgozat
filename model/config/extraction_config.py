@@ -16,6 +16,7 @@ class ExtractionConfig:
     model_path: str = 'model/pose_landmarker_heavy.task'
 
     target_fps: float = 60.0
+    output_fps: float = 30.0
 
     target_torso_px: float = 40.0
     target_mask_size: tuple = (256, 256)

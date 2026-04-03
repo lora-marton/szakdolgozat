@@ -11,8 +11,7 @@ from typing import Callable, Awaitable
 
 from model.comparison.comparator import Comparator
 from model.extraction.extractor import Extractor
-from model.feedback.feedback import extract_timeline_markers, generate_feedback
-from model.feedback.video_feedback import generate_feedback_video
+from model.feedback.feedback_generator import FeedbackGenerator
 from model.preprocessing.preprocessor import Preprocessor
 
 
@@ -73,18 +72,12 @@ class VideoProcessor:
             await send_status(f"Comparison complete. Overall score: {results['overall_score']}%")
 
             await send_status("Generating feedback...")
-            results['feedback'] = generate_feedback(results)
-            results['timeline_markers'] = extract_timeline_markers(results)
-            await send_status("Feedback ready.")
-
-            await send_status("Generating feedback video...")
-            video_path = await asyncio.to_thread(
-                generate_feedback_video,
-                teacher_file, student_file, output_dir,
-                preprocess_info,
+            feedback_result = await asyncio.to_thread(
+                FeedbackGenerator.generate_feedback,
+                results, teacher_file, student_file, output_dir,
             )
-            results['feedback_video'] = os.path.basename(video_path)
-            await send_status("Feedback video ready.")
+            results.update(feedback_result)
+            await send_status("Feedback ready.")
 
             return results
 
