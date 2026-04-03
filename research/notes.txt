@@ -36,6 +36,7 @@ session starter: .\venv\Scripts\activate
 
 dependencies: pip install -r requirements.txt
 
+run: python -m controller.routes or uvicorn controller.routes:app
 
 
 

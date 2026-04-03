@@ -1,0 +1,140 @@
+routes.py — FastAPI Application and Endpoints
+===============================================
+
+This file defines the single FastAPI application with all API endpoints
+for the dance comparison pipeline. It handles video upload, real-time
+progress streaming, feedback retrieval, video delivery, and session
+listing — all on one server (port 8000).
+
+Previously split across two files (fileGetter.py on port 8000 and
+feedbackSender.py on port 8001), merged into one to simplify deployment
+and eliminate cross-port communication.
+
+
+================================================================================
+Module-Level Setup
+================================================================================
+
+  sys.path hack (lines 20-23):
+    Computes ROOT_DIR from __file__ and adds it to sys.path so that
+    `from model.* import ...` works when running the file directly
+    with `python controller/routes.py`.
+
+  Imports from project:
+    - SessionService (from controller.services): All data-access logic.
+    - DATA_DIR (from controller.services): Shared data directory path.
+    - VideoProcessor (from model.video_processor): The pipeline orchestrator.
+
+  UPLOAD_FOLDER:
+    Where uploaded video files are saved. Created on import if it
+    doesn't exist.
+
+  status_queue:
+    Module-level asyncio.Queue shared between the POST /dance_videos
+    endpoint (producer) and the GET /events endpoint (consumer).
+    Module-level because both endpoints need the same queue instance.
+
+
+================================================================================
+Windows Lifespan Handler
+================================================================================
+
+  The lifespan async context manager runs on app startup and handles
+  two Windows-specific issues:
+
+  1. SIGINT handler reset:
+     Uvicorn installs a custom SIGINT handler for graceful shutdown,
+     but on Windows it sometimes hangs. Resetting to SIG_DFL makes
+     Ctrl+C terminate the server immediately.
+
+  2. Proactor error suppression:
+     Windows uses the Proactor event loop which raises spurious
+     ConnectionResetError when clients disconnect (e.g. browser tab
+     closes during SSE streaming). The custom exception handler
+     silences these instead of printing noisy tracebacks.
+
+  On non-Windows platforms, the lifespan handler is a no-op.
+
+
+================================================================================
+Endpoints — Upload & Processing
+================================================================================
+
+GET /events
+───────────
+
+  Returns a StreamingResponse wrapping SessionService.event_generator.
+  The browser connects via EventSource and receives real-time progress
+  updates during video processing.
+
+  Media type: text/event-stream (SSE protocol).
+
+
+POST /dance_videos
+──────────────────
+
+  Multipart file upload endpoint. Accepts two video files (teacher and
+  student), runs the full comparison pipeline, and returns scores.
+
+  Step by step:
+    1. Save uploaded files to UPLOAD_FOLDER via shutil.copyfileobj.
+    2. Generate a session ID from the current timestamp (YYYYMMDD_HHMMSS).
+    3. Call VideoProcessor.process_videos with an SSE callback that
+       pushes messages to the status_queue.
+    4. On success: save results to JSON via SessionService.save_results,
+       return a response with session_id, scores, and feedback messages.
+    5. On failure: raise HTTP 500.
+
+  The sse_status_handler closure bridges the pipeline's event_handler
+  interface (async callback taking a string) to the SSE queue.
+
+
+================================================================================
+Endpoints — Feedback Retrieval
+================================================================================
+
+GET /feedback
+─────────────
+
+  Returns a curated JSON response with scores, feedback messages,
+  timeline markers, and a video URL for a given session.
+
+  If session_id is omitted from the query string, uses the latest
+  session via SessionService.find_latest_session.
+
+  The feedback_video_url is only included if the MP4 file exists on
+  disk. It points to GET /feedback/video on the same server.
+
+
+GET /feedback/detailed
+──────────────────────
+
+  Returns the complete results dict unfiltered. Used by the frontend
+  for charts and per-frame visualizations that need alignment_path,
+  per_frame_shape, energy_details, etc.
+
+
+GET /feedback/video
+───────────────────
+
+  Serves the feedback video MP4 via FastAPI's FileResponse, which
+  handles range requests and streaming automatically.
+
+  Media type: video/mp4.
+
+
+GET /sessions
+─────────────
+
+  Lists all session directory names sorted newest-first. Used by the
+  frontend for a session picker / history view.
+
+
+================================================================================
+Configuration
+================================================================================
+
+  Port: 8000 (single server for all endpoints)
+  CORS: Allow all origins (development mode)
+  UPLOAD_FOLDER: {ROOT_DIR}/uploaded_videos
+  DATA_DIR: {ROOT_DIR}/data (imported from services.py)

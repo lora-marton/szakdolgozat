@@ -4,7 +4,7 @@ import OndemandVideoIcon from '@mui/icons-material/OndemandVideo';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 
-const FEEDBACK_BASE_URL = 'http://localhost:8001';
+const FEEDBACK_BASE_URL = 'http://localhost:8000';
 
 interface VideoFeedbackProps {
     videoUrl: string;

@@ -52,7 +52,7 @@ Parameters:
   - output_dir: Directory where extracted data (HDF5), results (JSON), and
     the feedback video (MP4) are stored.
   - event_handler: Optional async callback for sending status messages. In
-    practice, this is the sse_status_handler from fileGetter.py that puts
+    practice, this is the sse_status_handler from routes.py that puts
     messages into the SSE queue.
 
 Returns:
