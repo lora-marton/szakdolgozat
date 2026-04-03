@@ -1,141 +1,173 @@
-preprocessor.py — Line-by-Line Explanation
-============================================
+preprocessor.py — Preprocessing Orchestrator
+==============================================
 
 This file is the preprocessing orchestrator for the dance comparison pipeline.
-It synchronises two dance sequences temporally (via audio cross-correlation)
-and trims them to their shared active region before DTW alignment runs.
+It loads extracted data from HDF5 files, synchronises two dance sequences
+temporally (via audio cross-correlation), and trims them to their shared
+active region before DTW alignment runs.
+
+The file contains a single class (Preprocessor) with one public static method
+(preprocess) and three private helpers (_load_session_data, _apply_offset,
+_slice_data).
 
 
-Lines 1–9: Module Docstring
------------------------------
-Describes the file's purpose and lists the four preprocessing steps:
-1. Audio cross-correlation to find the frame offset between two videos.
-2. Apply offset — shift/trim the leading video so both start at the same beat.
-3. Motion energy detection — find the active dance range in each sequence.
-4. Intersection — keep only the overlapping active region.
+================================================================================
+Imports
+================================================================================
+
+  Standard library:
+    - os: Building file paths for HDF5 files.
+
+  Third-party:
+    - h5py: Reading landmark, mask, and trajectory data from HDF5 files.
+    - numpy (as np): Detecting array vs scalar types in _slice_data.
+
+  Project:
+    - DEFAULT_PREPROCESSOR_CONFIG (from model.config): Fallback config.
+    - PreprocessorConfig (from model.config.preprocessor_config): Type hint.
+    - AudioSync (from model.preprocessing.audio_sync): Audio cross-correlation.
+    - MotionEnergy (from model.preprocessing.motion_energy): Motion detection.
 
 
-Lines 10–15: Imports
----------------------
-- numpy (as np): Array operations — used in _slice_data() to detect and slice
-  numpy arrays vs scalar metadata.
-- DEFAULT_PREPROCESSOR_CONFIG (from model.config): The default PreprocessorConfig
-  instance, used as fallback when no config is passed to preprocess().
-- PreprocessorConfig (from model.config.preprocessor_config): The type itself,
-  used in the type annotation for the config parameter.
-- compute_audio_offset (from model.preprocessing.audio_sync): Extracts audio
-  from both videos and returns the lag in frames via cross-correlation.
-- compute_motion_energy, find_active_range (from model.preprocessing.motion_energy):
-  Compute per-frame motion energy from landmarks and find the start/end of the
-  active dance region by thresholding.
+================================================================================
+preprocess() — the pipeline
+================================================================================
+
+Signature:
+  @staticmethod
+  def preprocess(
+      output_dir: str,
+      teacher_video: str,
+      student_video: str,
+      config: PreprocessorConfig | None = None,
+  ) -> tuple[dict, dict, dict]
+
+Parameters:
+  - output_dir: Path to session directory containing teacher_*.h5 and
+    student_*.h5 files.
+  - teacher_video: Path to the teacher video file (for audio extraction).
+  - student_video: Path to the student video file (for audio extraction).
+  - config: PreprocessorConfig instance (uses defaults if None).
+
+Returns:
+  Tuple of (teacher_data, student_data, preprocess_info) where
+  preprocess_info contains 'audio_offset', 'teacher_offset', and
+  'student_offset'.
+
+The pipeline has five steps:
 
 
-Lines 18–19: Preprocessor Class
----------------------------------
-- A class that groups all preprocessing logic as static methods.
-- Contains no instance state — all methods are @staticmethod.
-- One public method (preprocess) and two private helpers (_apply_offset, _slice_data).
+Step 1 — Load HDF5 Data:
+  teacher_data = Preprocessor._load_session_data(output_dir, 'teacher')
+  student_data = Preprocessor._load_session_data(output_dir, 'student')
+
+  Reads landmarks, masks, trajectory, fps, and fixed_scale from the
+  session's HDF5 files. Returns data as a dict with numpy arrays and
+  scalar metadata.
 
 
-Lines 21–28: preprocess() Signature
---------------------------------------
-- @staticmethod: No self parameter, called as Preprocessor.preprocess().
-- Parameters:
-    - teacher_data (dict): Dict with 'landmarks', 'masks', 'trajectory' numpy
-      arrays plus scalar metadata like 'fps' and 'fixed_scale'.
-    - student_data (dict): Same structure as teacher_data.
-    - teacher_video (str): Path to the teacher video file (for audio extraction).
-    - student_video (str): Path to the student video file (for audio extraction).
-    - config (PreprocessorConfig | None): Optional configuration. If None,
-      DEFAULT_PREPROCESSOR_CONFIG is used.
-- Returns: tuple[dict, dict, dict] — the trimmed teacher_data, student_data,
-  and a preprocess_info dict with offset metadata.
+Step 2 — Audio Cross-Correlation:
+  offset = AudioSync.compute_audio_offset(
+      teacher_video, student_video,
+      target_fps=fps, sr=config.audio_sample_rate,
+  )
+
+  Returns an integer offset: positive means teacher leads (started
+  earlier), negative means student leads, zero means in sync.
+  Prints the offset and a human-readable description.
 
 
-Lines 44–45: Default Config Fallback
---------------------------------------
-- If no config was passed, use DEFAULT_PREPROCESSOR_CONFIG with all standard
-  thresholds (audio_sample_rate=22050, motion_threshold_ratio=0.15, etc.).
+Step 3 — Apply Offset:
+  teacher_data, student_data = Preprocessor._apply_offset(
+      teacher_data, student_data, offset,
+  )
+
+  Trims leading frames from the earlier video and truncates both to
+  the same length. After this call, both sequences start at the same
+  musical moment.
+
+  Audio trim counts are recorded:
+    teacher_audio_trim = offset if offset > 0 else 0
+    student_audio_trim = -offset if offset < 0 else 0
 
 
-Line 47: FPS Extraction
--------------------------
-- Reads the frame rate from teacher_data. Defaults to 60.0 if not present.
-  This fps is passed to compute_audio_offset() so the audio lag in seconds
-  can be converted to a frame count.
+Step 4 — Motion Energy Detection:
+  t_energy = MotionEnergy.compute_motion_energy(teacher_data['landmarks'])
+  s_energy = MotionEnergy.compute_motion_energy(student_data['landmarks'])
+
+  t_start, t_end = MotionEnergy.find_active_range(
+      t_energy, config.motion_threshold_ratio,
+      config.min_active_duration, config.active_window_ratio,
+  )
+
+  Computes per-frame motion energy for both sequences, then scans for
+  the first and last sustained burst of movement. The active_window_ratio
+  parameter allows brief dips in energy (e.g. a pose hold) without
+  breaking the detection.
 
 
-Lines 49–55: Step 1 — Audio Cross-Correlation
-------------------------------------------------
-- Calls compute_audio_offset() with both video paths, the target fps, and the
-  audio sample rate from config.
-- Returns an integer offset: positive means teacher leads (started earlier),
-  negative means student leads, zero means in sync.
-- Prints the offset and a human-readable description of which video leads.
+Step 5 — Intersection:
+  shared_start = max(t_start, s_start)
+  shared_end = min(t_end, s_end)
 
+  Computes the shared active region as the intersection of both active
+  ranges. If shared_start >= shared_end, there is no overlap — prints
+  a warning and returns the data as-is with only audio offset info in
+  preprocess_info.
 
-Lines 57–58: Audio Trim Tracking
-----------------------------------
-- Records how many frames will be trimmed from each video due to audio offset.
-  teacher_audio_trim is nonzero when teacher leads (offset > 0).
-  student_audio_trim is nonzero when student leads (offset < 0).
-  These values feed into preprocess_info so downstream code knows where the
-  trimmed data starts relative to the original HDF5 sequences.
-
-
-Line 60: Step 2 — Apply Offset
----------------------------------
-- Calls _apply_offset() which trims leading frames from the earlier video
-  and truncates both to the same length. After this call, both sequences
-  start at the same musical moment.
-
-
-Lines 62–73: Step 3 — Motion Energy Detection
-------------------------------------------------
-- Computes per-frame motion energy for both sequences using landmark displacement.
-- Calls find_active_range() on each energy array to find the start and end frames
-  where the dancer is actively moving (above the threshold ratio, for at least
-  min_active_duration consecutive frames).
-- Prints the active range for each dancer.
-
-
-Lines 75–89: Step 4 — Intersection
--------------------------------------
-- Computes the shared active region as the intersection of both active ranges:
-  shared_start = max(t_start, s_start), shared_end = min(t_end, s_end).
-- If shared_start >= shared_end, there is no overlap — prints a warning and
-  returns the data as-is with only audio offset info in preprocess_info.
-- Otherwise, prints the shared region size and slices both datasets to it.
-
-
-Lines 91–100: Final Slicing and Return
-----------------------------------------
-- Slices both teacher and student data to [shared_start:shared_end].
-- Builds the preprocess_info dict with:
+  Otherwise, slices both datasets to [shared_start:shared_end] and
+  builds the preprocess_info dict:
     - audio_offset: Raw frame offset from audio cross-correlation.
-    - teacher_offset: Total frames trimmed from start of teacher's original
-      HDF5 data (audio trim + shared region trim).
+    - teacher_offset: Total frames trimmed from start of teacher's
+      original HDF5 data (audio trim + shared region trim).
     - student_offset: Same for the student.
-  These offsets are used by the feedback video renderer to sync the overlay
-  back to the correct frames in the original videos.
-- Returns the trimmed (teacher_data, student_data, preprocess_info) tuple.
+  These offsets are used by the feedback video renderer and the timeline
+  marker timestamp conversion.
 
 
-Lines 102–132: _apply_offset() — Private Static Method
----------------------------------------------------------
-- Takes both data dicts and the audio offset.
-- If offset > 0 (teacher leads): trims the first `offset` frames from teacher.
-- If offset < 0 (student leads): trims the first `|offset|` frames from student.
-- After trimming the leader, truncates both to the shorter sequence length
+================================================================================
+_load_session_data() — Private Static Method
+================================================================================
+
+  Loads landmarks, masks, and trajectory from a session's HDF5 files.
+
+  Opens two files:
+    {output_dir}/{label}_data.h5  — 'raw' landmarks, 'trajectory', plus
+                                     'fps' and 'fixed_scale' as attributes.
+    {output_dir}/{label}_masks.h5 — 'masks' dataset.
+
+  Returns a dict with:
+    'landmarks': numpy array of shape (N, 33, 4)
+    'trajectory': numpy array of shape (N, 2)
+    'masks': numpy array of shape (N, 256, 256)
+    'fps': float (default 60.0)
+    'fixed_scale': float (default 1.0)
+
+
+================================================================================
+_apply_offset() — Private Static Method
+================================================================================
+
+  Takes both data dicts and the audio offset.
+
+  If offset > 0 (teacher leads): trims the first `offset` frames from teacher.
+  If offset < 0 (student leads): trims the first `|offset|` frames from student.
+
+  After trimming the leader, truncates both to the shorter sequence length
   so they have the same number of frames.
-- Returns the trimmed (teacher_data, student_data) tuple.
+
+  Returns the trimmed (teacher_data, student_data) tuple.
 
 
-Lines 134–155: _slice_data() — Private Static Method
--------------------------------------------------------
-- Generic helper that creates a shallow copy of a data dict with all numpy
+================================================================================
+_slice_data() — Private Static Method
+================================================================================
+
+  Generic helper that creates a shallow copy of a data dict with all numpy
   arrays sliced to [start:end].
-- Non-array entries (e.g. 'fps', 'fixed_scale') are preserved unchanged.
-- The end parameter accepts None (meaning "slice to the end"), which is used
+
+  Non-array entries (e.g. 'fps', 'fixed_scale') are preserved unchanged.
+  The end parameter accepts None (meaning "slice to the end"), which is used
   by _apply_offset() when trimming only the leading frames.
-- Returns the new dict with sliced arrays and preserved scalars.
+
+  Returns the new dict with sliced arrays and preserved scalars.

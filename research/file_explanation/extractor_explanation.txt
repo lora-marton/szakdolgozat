@@ -36,8 +36,9 @@ Lines 15–18: Project Imports
 - FrameProcessor (from model.extraction.frame_processor): The per-frame
   processing class that handles filtering, calibration, and normalization.
   Created once per extraction and reused for every frame.
-- draw_skeleton, draw_mask_overlay (from model.extraction.visualization):
-  Debug-only drawing functions for the OpenCV preview windows.
+- Visualization (from model.extraction.visualization): Debug-only class
+  with draw_skeleton and draw_mask_overlay static methods for the OpenCV
+  preview windows.
 
 
 Lines 21–22: Extractor Class

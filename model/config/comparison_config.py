@@ -88,7 +88,7 @@ class ComparisonConfig:
 
     mask_binary_threshold: int = 128
 
-    efd_harmonics: int = 6
+    efd_harmonics: int = 7
     efd_contour_points: int = 200
 
     dtm_sigma: float = 25.0

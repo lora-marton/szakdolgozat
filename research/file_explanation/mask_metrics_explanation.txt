@@ -104,8 +104,8 @@ Step by step:
        - Each harmonic produces 4 coefficients: (a_n, b_n) for x(t)
          and (c_n, d_n) for y(t).
 
-     order=n_harmonics (default 8) keeps only the first 8 harmonics.
-     Returns shape (8, 4). This discards all high-frequency detail.
+     order=n_harmonics (default 7) keeps only the first 7 harmonics.
+     Returns shape (7, 4). This discards all high-frequency detail.
 
      normalize=False preserves the actual size, rotation, and orientation
      of the contour. This is important because we want to compare shapes
@@ -392,7 +392,7 @@ Config parameters used (from ComparisonConfig)
 ================================================================================
 
   mask_binary_threshold = 128    Binarization cutoff for mask pixels
-  efd_harmonics = 6              Number of EFD harmonics (body shape detail)
+  efd_harmonics = 7              Number of EFD harmonics (body shape detail)
   efd_contour_points = 200       Points in reconstructed smooth contour
   dtm_sigma = 25.0               Gaussian decay width in pixels for DTM
   flow_winsize = 15              Farneback optical flow window size
