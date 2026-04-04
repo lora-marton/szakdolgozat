@@ -4,7 +4,7 @@ import {
 import { useTheme } from '@mui/material/styles';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
-import type { FeedbackResponse } from '../api/feedbackGetter';
+import type { FeedbackResponse } from '../api/apiService';
 
 interface ResultsPanelProps {
     results: FeedbackResponse;

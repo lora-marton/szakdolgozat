@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Button from '@mui/material/Button';
 import Grid from '@mui/material/Grid';
 import Uploader from './Uploader';
-import { sendFiles } from '../api/fileSender';
+import { sendFiles } from '../api/apiService';
 
 const FileChooser = () => {
     const [teacherFile, setTeacherFile] = useState<File | null>(null);

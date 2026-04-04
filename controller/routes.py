@@ -13,7 +13,7 @@ from datetime import datetime
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 import uvicorn
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -119,6 +119,20 @@ async def upload_files(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/events")
+async def sse_events():
+    """Stream real-time processing status updates via Server-Sent Events."""
+
+    async def event_generator():
+        while True:
+            message = await status_queue.get()
+            yield f"data: {message}\n\n"
+            if message == "Processing complete.":
+                break
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.get("/feedback")

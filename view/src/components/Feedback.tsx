@@ -3,8 +3,8 @@ import Box from '@mui/material/Box';
 import SseMessages from './SseMessages';
 import ResultsPanel from './ResultsPanel';
 import VideoFeedback from './VideoFeedback';
-import { getFeedback } from '../api/feedbackGetter';
-import type { FeedbackResponse } from '../api/feedbackGetter';
+import { getFeedback, connectToEvents } from '../api/apiService';
+import type { FeedbackResponse } from '../api/apiService';
 
 const Feedback = () => {
     const [messages, setMessages] = useState<string[]>([]);
@@ -13,7 +13,7 @@ const Feedback = () => {
 
     useEffect(() => {
         // Connect to SSE endpoint
-        const es = new EventSource('http://127.0.0.1:8000/events');
+        const es = connectToEvents();
         eventSource.current = es;
 
         es.onopen = () => {
@@ -25,7 +25,8 @@ const Feedback = () => {
             setMessages((prev) => [...prev, event.data]);
 
             // When backend signals feedback is ready, fetch the results
-            if (event.data === 'Feedback video ready.') {
+            if (event.data === 'Processing complete.') {
+                es.close();
                 getFeedback()
                     .then((data) => setResults(data))
                     .catch((err) => console.error('Failed to fetch feedback:', err));

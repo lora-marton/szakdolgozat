@@ -4,7 +4,7 @@ import OndemandVideoIcon from '@mui/icons-material/OndemandVideo';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 
-const FEEDBACK_BASE_URL = 'http://localhost:8000';
+import { videoUrl as buildVideoUrl } from '../api/apiService';
 
 interface VideoFeedbackProps {
     videoUrl: string;
@@ -19,7 +19,7 @@ const formatTime = (timeInSeconds: number) => {
 };
 
 const VideoFeedback = ({ videoUrl, timelineMarkers = [] }: VideoFeedbackProps) => {
-    const fullUrl = `${FEEDBACK_BASE_URL}${videoUrl}`;
+    const fullUrl = buildVideoUrl(videoUrl);
     const videoRef = useRef<HTMLVideoElement>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
