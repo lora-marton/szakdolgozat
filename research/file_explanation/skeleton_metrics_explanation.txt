@@ -180,18 +180,42 @@ Step by step:
 ================================================================================
 
 Purpose: Score how well the student's joint angles match the teacher's,
-with per-joint tolerance zones and exponential decay penalties.
+with per-joint tolerance zones and exponential decay penalties. Skips
+frames where landmarks are not reliably tracked (low visibility).
 
 Input:
   - teacher_angles: shape (N, J) — angles in degrees (DTW-aligned).
   - student_angles: shape (N, J) — same shape, same alignment.
+  - teacher_landmarks: shape (N, 33, 4) — used for visibility data.
+  - student_landmarks: shape (N, 33, 4) — used for visibility data.
+  - angle_definitions: tuple of (parent, joint, child) index triplets.
   - tolerances: dict of joint name → tolerance in degrees.
   - sigma: decay parameter (configured as angle_sigma = 35.0).
+  - vis_threshold: minimum landmark visibility to trust the angle
+    (configured as visibility_threshold = 0.5).
 
 Output:
   - overall_score: float 0-100.
   - per_joint_scores: dict of joint name → score 0-100.
   - worst_frames: list of up to 5 (frame_idx, joint_name, error_degrees) tuples.
+
+Visibility filtering:
+
+  MediaPipe assigns each landmark a visibility confidence (0.0–1.0). When a
+  body part is off-screen or occluded, visibility drops and the coordinates
+  become unreliable. Comparing garbage coordinates would produce false
+  deviations (e.g. "right shoulder off by 45°" when the teacher's elbow
+  was never tracked).
+
+  Before scoring, this method builds a boolean "active" mask of shape (N, J).
+  For each joint angle (defined by 3 landmarks), all 3 landmarks must have
+  visibility >= vis_threshold in BOTH teacher and student. If any of the 6
+  visibility values is too low, that (frame, joint) cell is marked inactive.
+
+  This follows the same active-frame pattern used in mask_metrics (where
+  frames with empty masks are skipped) and trajectory_metrics (where frames
+  with no movement are skipped): build a boolean array, then average only
+  over active entries.
 
 Scoring formula:
 
@@ -219,22 +243,33 @@ Scoring formula:
 
 Step by step:
 
-  1. Compute absolute error matrix: shape (N, J).
+  1. Extract visibility columns from both landmark arrays (index 3 of the
+     last dimension). Build the active mask: shape (N, J), True where all
+     3 landmarks of that joint angle have visibility >= threshold in both
+     teacher and student.
 
-  2. For each joint j, compute excess beyond tolerance, then apply the
+  2. Compute absolute error matrix: shape (N, J).
+
+  3. For each joint j, compute excess beyond tolerance, then apply the
      Gaussian decay formula. Results go into frame_scores: shape (N, J).
 
-  3. Per-joint scores: average each column across all frames.
+  4. Per-joint scores: for each joint, average frame_scores only over frames
+     where active[:, j] is True. If a joint was never visible, it gets 100.0
+     (we can't penalize what we can't measure).
 
-  4. Overall score: average of the entire (N, J) matrix — this weights all
-     joints equally and all frames equally.
+  5. Overall score: average frame_scores over all active (frame, joint)
+     pairs. Inactive pairs are excluded entirely.
 
-  5. Worst frames detection:
-     a) Compute mean score per frame across all joints → shape (N,).
-     b) Sort ascending (lowest scores = worst frames).
-     c) Take the top 5 worst frames.
-     d) For each worst frame, find the joint with the highest absolute error
-        using argmax on the error row.
+  6. Worst frames detection:
+     a) Copy the error matrix and zero out inactive cells, so inactive joints
+        can never be picked as the "worst".
+     b) Compute mean score per frame, treating inactive joints as 100.0
+        (perfect), so a frame with many inactive joints isn't artificially
+        ranked as "worst".
+     c) Sort ascending (lowest scores = worst frames), take top 5.
+     d) For each worst frame, skip if no joints are active. Otherwise find
+        the active joint with the highest error using argmax on the masked
+        error row.
      e) Return (frame_index, joint_name, error_in_degrees) for each.
 
   These worst frames are used by the feedback system to tell the student

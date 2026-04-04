@@ -3,7 +3,7 @@ Rule-based text feedback generation for dance comparison results.
 """
 import numpy as np
 
-from model.config import DEFAULT_EXTRACTION_CONFIG, DEFAULT_FEEDBACK_CONFIG
+from model.config import DEFAULT_EXTRACTION_CONFIG
 
 
 _JOINT_TIPS = {
@@ -20,19 +20,16 @@ class TextFeedback:
     """Rule-based text feedback and timeline marker generation."""
 
     @staticmethod
-    def generate_messages(results: dict, config=None) -> list[str]:
+    def generate_messages(results: dict, config) -> list[str]:
         """Generate human-readable feedback from comparison results.
 
         Args:
             results: Dict returned by Comparator.compare_dances().
-            config: FeedbackConfig instance (uses default if None).
+            config: FeedbackConfig instance.
 
         Returns:
             Prioritised list of feedback message strings.
         """
-        if config is None:
-            config = DEFAULT_FEEDBACK_CONFIG
-
         feedback = []
 
         overall = results['overall_score']
@@ -70,15 +67,20 @@ class TextFeedback:
         return feedback
 
     @staticmethod
-    def extract_timeline_markers(results: dict) -> list[dict]:
+    def extract_timeline_markers(results: dict, config) -> list[dict]:
         """Extract timestamps for the worst frames for the frontend video player.
+
+        Worst frames are the frames with the lowest mean joint score.
+        Markers are spaced at least config.min_marker_gap seconds apart so
+        they don't cluster at the same moment.
 
         Args:
             results: Dict returned by Comparator.compare_dances() with
                 preprocess_info added by video_processor.
+            config: FeedbackConfig instance.
 
         Returns:
-            List of dicts with 'time' (seconds) and 'label' (string).
+            List of dicts with 'time' (seconds) and 'label' (score string).
         """
         worst_frames = results.get('worst_frames', [])
         if not worst_frames:
@@ -95,17 +97,29 @@ class TextFeedback:
 
         markers = []
 
-        for dtw_idx, joint_name, error_deg in worst_frames:
+        for dtw_idx, frame_score in worst_frames:
             time_sec = TextFeedback._frame_to_seconds(
                 dtw_idx, alignment, audio_offset, student_offset, source_fps,
             )
             if time_sec is None:
                 continue
 
+            time_rounded = round(time_sec, 2)
+
+            too_close = any(
+                abs(time_rounded - m['time']) < config.min_marker_gap
+                for m in markers
+            )
+            if too_close:
+                continue
+
             markers.append({
-                'time': round(time_sec, 2),
-                'label': f"{joint_name} (off by {error_deg}°)",
+                'time': time_rounded,
+                'label': f"{frame_score}%",
             })
+
+            if len(markers) >= 5:
+                break
 
         return markers
 
@@ -165,28 +179,12 @@ class TextFeedback:
             return f"This needs more practice. Overall score: {score}%."
 
     @staticmethod
-    def _joint_warnings(per_joint_scores: dict, threshold: float) -> list[str]:
-        """Flag joints that scored below the warning threshold."""
-        warnings = []
-        for joint, score in sorted(per_joint_scores.items(), key=lambda x: x[1]):
-            if score < threshold:
-                tip = None
-                for key, msg in _JOINT_TIPS.items():
-                    if key in joint:
-                        tip = msg
-                        break
-                if tip is None:
-                    tip = f'Your {joint} positioning needs improvement.'
-                warnings.append(f"{joint.replace('_', ' ').title()} scored {score}%. {tip}")
-        return warnings
-
-    @staticmethod
     def _worst_moment(worst_frames: list, results: dict) -> str | None:
         """Highlight the single worst frame with a timestamp."""
         if not worst_frames:
             return None
 
-        dtw_idx, joint_name, error_deg = worst_frames[0]
+        dtw_idx, frame_score = worst_frames[0]
 
         alignment = results.get('alignment_path', [])
         preprocess_info = results.get('preprocess_info', {})
@@ -203,14 +201,27 @@ class TextFeedback:
 
         if time_sec is not None:
             return (
-                f"Your biggest deviation was at {time_sec:.1f}s: "
-                f"{joint_name.replace('_', ' ')} was off by {error_deg}°."
+                f"Your biggest deviation was at {time_sec:.1f}s "
+                f"(score: {frame_score}%)."
             )
 
-        return (
-            f"Your biggest deviation: "
-            f"{joint_name.replace('_', ' ')} was off by {error_deg}°."
-        )
+        return f"Your biggest deviation scored {frame_score}%."
+
+    @staticmethod
+    def _joint_warnings(per_joint_scores: dict, threshold: float) -> list[str]:
+        """Flag joints that scored below the warning threshold."""
+        warnings = []
+        for joint, score in sorted(per_joint_scores.items(), key=lambda x: x[1]):
+            if score < threshold:
+                tip = None
+                for key, msg in _JOINT_TIPS.items():
+                    if key in joint:
+                        tip = msg
+                        break
+                if tip is None:
+                    tip = f'Your {joint} positioning needs improvement.'
+                warnings.append(f"{TextFeedback._format_joint(joint)} scored {score}%. {tip}")
+        return warnings
 
     @staticmethod
     def _trajectory_warning(trajectory_score: float, threshold: float) -> str | None:
@@ -279,3 +290,8 @@ class TextFeedback:
         if mask_score >= threshold:
             messages.append(f"Body shape closely matches the teacher! Mask score: {mask_score}%.")
         return messages
+
+    @staticmethod
+    def _format_joint(name: str) -> str:
+        """Format a joint name for display: 'right_elbow' -> 'Right Elbow'."""
+        return name.replace('_', ' ')

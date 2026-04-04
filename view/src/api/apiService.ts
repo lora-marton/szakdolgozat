@@ -17,7 +17,7 @@ export interface FeedbackResponse {
 
 export interface DetailedFeedbackResponse extends FeedbackResponse {
     alignment_path: [number, number][];
-    worst_frames: [number, string, number][];
+    worst_frames: [number, number][];
     per_frame_shape: number[];
     energy_details: {
         energy_score: number;

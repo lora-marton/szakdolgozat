@@ -68,7 +68,7 @@ const VideoFeedback = ({ videoUrl, timelineMarkers = [] }: VideoFeedbackProps) =
     const marks = timelineMarkers.map((marker) => ({
         value: marker.time,
         label: (
-            <Tooltip title={marker.label} placement="top" arrow>
+            <Tooltip title={`${formatTime(marker.time)} — ${marker.label}`} placement="top" arrow>
                 <Box
                     sx={{
                         width: 8,
@@ -169,39 +169,6 @@ const VideoFeedback = ({ videoUrl, timelineMarkers = [] }: VideoFeedbackProps) =
                         {formatTime(duration)}
                     </Typography>
                 </Box>
-
-                {timelineMarkers.length > 0 && (
-                    <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                        <Typography variant="caption" sx={{ color: 'text.secondary', width: '100%' }}>
-                            Jump to mistakes:
-                        </Typography>
-                        {timelineMarkers.map((m, idx) => (
-                            <Box
-                                key={idx}
-                                onClick={() => {
-                                    if (videoRef.current) {
-                                        videoRef.current.currentTime = m.time;
-                                        setCurrentTime(m.time);
-                                        if (!isPlaying) togglePlay();
-                                    }
-                                }}
-                                sx={{
-                                    cursor: 'pointer',
-                                    bgcolor: 'primary.main',
-                                    color: 'white',
-                                    px: 1,
-                                    py: 0.5,
-                                    borderRadius: 1,
-                                    fontSize: '0.75rem',
-                                    '&:hover': { bgcolor: 'text.primary' },
-                                    boxShadow: 1
-                                }}
-                            >
-                                {formatTime(m.time)} - {m.label.replace('⚠ ', '')}
-                            </Box>
-                        ))}
-                    </Box>
-                )}
 
                 <Typography
                     variant="caption"

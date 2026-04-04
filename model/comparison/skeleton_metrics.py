@@ -34,7 +34,10 @@ class SkeletonMetrics:
             student_landmarks, config.joint_angles,
         )
         angle_score, per_joint_scores, worst_frames = SkeletonMetrics._compare_angles(
-            teacher_angles, student_angles, config.joint_tolerances, config.angle_sigma,
+            teacher_angles, student_angles,
+            teacher_landmarks, student_landmarks,
+            config.joint_angles, config.joint_tolerances, config.angle_sigma,
+            config.visibility_threshold,
         )
 
         teacher_cog = SkeletonMetrics._compute_cog(teacher_landmarks, config.cog_weights)
@@ -113,25 +116,44 @@ class SkeletonMetrics:
     def _compare_angles(
         teacher_angles: np.ndarray,
         student_angles: np.ndarray,
+        teacher_landmarks: np.ndarray,
+        student_landmarks: np.ndarray,
+        angle_definitions: tuple,
         tolerances: dict,
         sigma: float,
+        vis_threshold: float,
     ) -> tuple[float, dict, list]:
         """Score the similarity of joint angles using exponential decay.
 
         Within tolerance the score is 100. Beyond tolerance the score decays
         as 100 * exp(-((error - tolerance) / sigma)^2).
+        Frames where landmarks are not reliably tracked (visibility below
+        threshold) are skipped, following the same active-frame pattern
+        used in mask_metrics and trajectory_metrics.
 
         Args:
             teacher_angles: Array of shape (N, J) with teacher angles in degrees.
             student_angles: Array of shape (N, J) with student angles (DTW-aligned).
+            teacher_landmarks: Array of shape (N, 33, 4) for visibility data.
+            student_landmarks: Array of shape (N, 33, 4) for visibility data.
+            angle_definitions: Tuple of (parent, joint, child) index triplets.
             tolerances: Dict of joint name to tolerance in degrees.
             sigma: Decay parameter — error beyond tolerance at which score drops to ~37%.
+            vis_threshold: Minimum landmark visibility to consider the angle reliable.
 
         Returns:
             Tuple of (overall_score, per_joint_scores dict, worst_frames list).
         """
         joint_names = list(tolerances.keys())
         num_frames = teacher_angles.shape[0]
+        teacher_vis = teacher_landmarks[:, :, 3]
+        student_vis = student_landmarks[:, :, 3]
+
+        active = np.ones((num_frames, len(joint_names)), dtype=bool)
+        for j, (parent, joint, child) in enumerate(angle_definitions):
+            for idx in (parent, joint, child):
+                active[:, j] &= (teacher_vis[:, idx] >= vis_threshold)
+                active[:, j] &= (student_vis[:, idx] >= vis_threshold)
 
         errors = np.abs(teacher_angles - student_angles)
 
@@ -144,23 +166,26 @@ class SkeletonMetrics:
 
         per_joint_scores = {}
         for j, name in enumerate(joint_names):
-            per_joint_scores[name] = round(float(frame_scores[:, j].mean()), 1)
+            if active[:, j].any():
+                per_joint_scores[name] = round(float(frame_scores[active[:, j], j].mean()), 1)
+            else:
+                per_joint_scores[name] = 100.0
 
-        score = float(frame_scores.mean())
+        if active.any():
+            score = float(frame_scores[active].mean())
+        else:
+            score = 100.0
 
-        worst_frames = []
-        num_worst = min(5, num_frames)
+        # Worst frames: all active frames sorted by mean score (ascending).
+        # extract_timeline_markers handles gap filtering and final selection.
+        mean_frame_scores = np.where(active, frame_scores, 100.0).mean(axis=1)
+        worst_indices = np.argsort(mean_frame_scores)
 
-        mean_frame_scores = frame_scores.mean(axis=1)
-        worst_indices = np.argsort(mean_frame_scores)[:num_worst]
-
-        for idx in worst_indices:
-            worst_joint_j = np.argmax(errors[idx])
-            worst_frames.append((
-                int(idx),
-                joint_names[worst_joint_j],
-                round(float(errors[idx, worst_joint_j]), 1),
-            ))
+        worst_frames = [
+            (int(idx), round(float(mean_frame_scores[idx]), 1))
+            for idx in worst_indices
+            if active[idx].any()
+        ]
 
         return round(score, 1), per_joint_scores, worst_frames
 

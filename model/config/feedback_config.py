@@ -12,9 +12,11 @@ class FeedbackConfig:
     """Configuration for feedback generation thresholds."""
 
     joint_warn_threshold: float = 70.0
-    direction_warn_threshold: float = 0.7
+    direction_warn_threshold: float = 70.0
     mask_warn_threshold: float = 60.0
     praise_threshold: float = 80.0
+
+    min_marker_gap: float = 1.0
 
     energy_low_threshold: float = 0.6
     energy_high_threshold: float = 1.4

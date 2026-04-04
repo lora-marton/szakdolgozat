@@ -86,6 +86,7 @@ class ComparisonConfig:
         28: 0.02,
     })
 
+    visibility_threshold: float = 0.5
     mask_binary_threshold: int = 128
 
     efd_harmonics: int = 7

@@ -5,6 +5,7 @@ Tests several scenarios with synthetic comparison results to ensure
 the rule-based feedback generator produces expected messages.
 """
 import numpy as np
+from model.config import DEFAULT_FEEDBACK_CONFIG
 from model.feedback.text_feedback import TextFeedback
 
 
@@ -27,7 +28,7 @@ def _make_results(**overrides):
             'left_inner_shoulder': 95.0, 'right_inner_shoulder': 95.0,
             'left_inner_hip': 95.0, 'right_inner_hip': 95.0,
         },
-        'worst_frames': [(10, 'left_elbow', 5.0)],
+        'worst_frames': [(10, 85.0)],
         'per_frame_shape': np.ones(100, dtype=np.float32),
         'energy_details': {
             'energy_score': 0.95,
@@ -46,7 +47,7 @@ def _make_results(**overrides):
 def test_excellent_performance():
     """All scores high -> overall praise, no warnings."""
     results = _make_results()
-    feedback = TextFeedback.generate_messages(results)
+    feedback = TextFeedback.generate_messages(results, DEFAULT_FEEDBACK_CONFIG)
 
     print("=== Excellent Performance ===")
     for msg in feedback:
@@ -73,14 +74,14 @@ def test_poor_joint():
             'left_inner_hip': 85.0, 'right_inner_hip': 85.0,
         },
     )
-    feedback = TextFeedback.generate_messages(results)
+    feedback = TextFeedback.generate_messages(results, DEFAULT_FEEDBACK_CONFIG)
 
     print("=== Poor Elbow Score ===")
     for msg in feedback:
         print(f"  {msg}")
 
-    assert any('Left Elbow' in m and 'elbow' in m.lower() for m in feedback), "Should warn about left elbow"
-    assert not any('Left Knee' in m for m in feedback), "Knees are fine"
+    assert any('left elbow' in m and 'elbow' in m.lower() for m in feedback), "Should warn about left elbow"
+    assert not any('left knee' in m for m in feedback), "Knees are fine"
     print("  PASSED\n")
 
 
@@ -90,7 +91,7 @@ def test_trajectory_warning():
         overall_score=60.0,
         trajectory_score=50.0,
     )
-    feedback = TextFeedback.generate_messages(results)
+    feedback = TextFeedback.generate_messages(results, DEFAULT_FEEDBACK_CONFIG)
 
     print("=== Low Trajectory ===")
     for msg in feedback:
@@ -112,7 +113,7 @@ def test_energy_too_low():
             'student_energy': np.ones(99, dtype=np.float32) * 2.0,
         },
     )
-    feedback = TextFeedback.generate_messages(results)
+    feedback = TextFeedback.generate_messages(results, DEFAULT_FEEDBACK_CONFIG)
 
     print("=== Low Energy ===")
     for msg in feedback:
@@ -134,7 +135,7 @@ def test_energy_too_high():
             'student_energy': np.ones(99, dtype=np.float32) * 15.0,
         },
     )
-    feedback = TextFeedback.generate_messages(results)
+    feedback = TextFeedback.generate_messages(results, DEFAULT_FEEDBACK_CONFIG)
 
     print("=== High Energy ===")
     for msg in feedback:
@@ -147,16 +148,16 @@ def test_energy_too_high():
 def test_worst_moment():
     """Worst frame should be highlighted with timestamp."""
     results = _make_results(
-        worst_frames=[(42, 'left_knee', 55.3), (10, 'left_elbow', 30.0)],
+        worst_frames=[(42, 35.2), (10, 60.0)],
     )
-    feedback = TextFeedback.generate_messages(results)
+    feedback = TextFeedback.generate_messages(results, DEFAULT_FEEDBACK_CONFIG)
 
     print("=== Worst Moment ===")
     for msg in feedback:
         print(f"  {msg}")
 
-    assert any('biggest deviation' in m and 'left knee' in m for m in feedback), "Should highlight worst moment"
-    assert any('s:' in m for m in feedback), "Should use seconds, not frames"
+    assert any('biggest deviation' in m and '35.2%' in m for m in feedback), "Should highlight worst moment"
+    assert any('s ' in m for m in feedback), "Should use seconds, not frames"
     print("  PASSED\n")
 
 
