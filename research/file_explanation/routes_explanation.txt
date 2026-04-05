@@ -63,9 +63,11 @@ Endpoints — Upload & Processing
 GET /events
 ───────────
 
-  Returns a StreamingResponse wrapping SessionService.event_generator.
-  The browser connects via EventSource and receives real-time progress
-  updates during video processing.
+  Returns a StreamingResponse wrapping an inline async generator that
+  reads from the status_queue. The browser connects via EventSource
+  and receives real-time progress updates during video processing.
+  The generator breaks after receiving "Processing complete." to
+  close the SSE stream.
 
   Media type: text/event-stream (SSE protocol).
 

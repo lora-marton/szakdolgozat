@@ -13,6 +13,7 @@ import h5py
 import numpy as np
 
 from model.config import DEFAULT_EXTRACTION_CONFIG
+from model.config.extraction_config import ExtractionConfig
 
 
 class VideoFeedback:
@@ -24,7 +25,7 @@ class VideoFeedback:
         student_video: str,
         output_dir: str,
         preprocess_info: dict | None = None,
-        config=None,
+        config: ExtractionConfig | None = None,
     ) -> str:
         """Generate a side-by-side comparison video with skeleton overlays.
 

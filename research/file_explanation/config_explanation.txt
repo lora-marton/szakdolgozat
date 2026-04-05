@@ -155,6 +155,11 @@ Fields:
     Head (0.08), shoulders (0.06), knees (0.06), elbows (0.03),
     wrists/ankles (0.02). Weights approximate real body proportions.
 
+  visibility_threshold (float, 0.5)
+    Minimum landmark visibility to consider a joint angle reliable.
+    Used by SkeletonMetrics._compare_angles to filter out frames where
+    landmarks are off-screen or occluded.
+
   mask_binary_threshold (int, 128)
     Threshold for converting grayscale segmentation mask to binary.
 
@@ -196,19 +201,22 @@ Class Declaration:
 
 Fields:
 
-  joint_warn_threshold (float, 70.0)
-    Joint scores below 70% trigger a warning in the feedback.
+  joint_warn_threshold (float, 60.0)
+    Joint scores below 60% trigger a warning in the feedback.
 
-  direction_warn_threshold (float, 70.0)
-    Direction similarity scores below 70% trigger a trajectory warning.
+  direction_warn_threshold (float, 60.0)
+    Direction similarity scores below 60% trigger a trajectory warning.
     On the 0-100 scale, consistent with all other thresholds.
 
   mask_warn_threshold (float, 60.0)
-    Mask scores below 60% trigger a silhouette warning. Lower than the
-    joint threshold because mask comparison is inherently noisier.
+    Mask scores below 60% trigger a silhouette warning.
 
-  praise_threshold (float, 80.0)
-    Component scores above 80% get positive feedback.
+  praise_threshold (float, 75.0)
+    Component scores above 75% get positive feedback.
+
+  min_marker_gap (float, 1.0)
+    Minimum time gap in seconds between timeline markers. Prevents markers
+    from clustering at the same moment in the feedback video.
 
   energy_low_threshold (float, 0.6)
     Student/teacher energy ratio below 0.6 triggers "less energetic" warning.
@@ -216,6 +224,12 @@ Fields:
   energy_high_threshold (float, 1.4)
     Student/teacher energy ratio above 1.4 triggers "exaggerated" warning.
     Asymmetric with the low threshold because under-dancing is more common.
+
+  timing_warn_threshold (float, 0.67)
+    Normalized DTW cost above this value triggers a timing/rhythm warning.
+
+  timing_praise_threshold (float, 0.60)
+    Normalized DTW cost at or below this value triggers timing praise.
 
 Instance:
   DEFAULT_FEEDBACK_CONFIG — pre-created with all default values.

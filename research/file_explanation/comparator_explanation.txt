@@ -70,7 +70,7 @@ Phase 2 — Skeleton Comparison
   decay, and returns:
     - 'score': weighted combination (80% angles + 20% CoG), 0-100
     - 'per_joint_scores': dict of 16 joint names → individual scores
-    - 'worst_frames': top 5 worst (frame, joint, error) tuples
+    - 'worst_frames': all active frames as (frame_idx, score) tuples, worst first
 
 
 Phase 3 — Mask Comparison

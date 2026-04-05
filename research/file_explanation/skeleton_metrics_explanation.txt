@@ -42,7 +42,9 @@ Step by step:
 Returns a dict with:
   - 'score': combined skeleton score (0-100)
   - 'per_joint_scores': dict of joint name → score
-  - 'worst_frames': list of worst (frame, joint, error) tuples
+  - 'worst_frames': list of (frame_index, mean_score) tuples, sorted
+    ascending by score (worst first). ALL frames are included, not just
+    the worst 5 — downstream consumers (text_feedback) pick how many to use.
 
 This mirrors the pattern used by MaskMetrics.compute_mask_score — both
 return a dict and keep all internal wiring private. Comparator.py only
@@ -197,7 +199,8 @@ Input:
 Output:
   - overall_score: float 0-100.
   - per_joint_scores: dict of joint name → score 0-100.
-  - worst_frames: list of up to 5 (frame_idx, joint_name, error_degrees) tuples.
+  - worst_frames: list of (frame_idx, mean_frame_score) tuples, all active
+    frames sorted ascending by score (worst first).
 
 Visibility filtering:
 
@@ -261,19 +264,16 @@ Step by step:
      pairs. Inactive pairs are excluded entirely.
 
   6. Worst frames detection:
-     a) Copy the error matrix and zero out inactive cells, so inactive joints
-        can never be picked as the "worst".
-     b) Compute mean score per frame, treating inactive joints as 100.0
-        (perfect), so a frame with many inactive joints isn't artificially
-        ranked as "worst".
-     c) Sort ascending (lowest scores = worst frames), take top 5.
-     d) For each worst frame, skip if no joints are active. Otherwise find
-        the active joint with the highest error using argmax on the masked
-        error row.
-     e) Return (frame_index, joint_name, error_in_degrees) for each.
+     a) For each frame, check if any joints are active (any_active mask).
+     b) Compute per-frame mean score: sum of active joint scores / number
+        of active joints. Inactive joints contribute nothing. Frames with
+        no active joints get 100.0 (can't penalize what we can't measure).
+     c) Sort all frames ascending by mean score (lowest = worst).
+     d) Return (frame_index, rounded_mean_score) for every frame that has
+        at least one active joint. Frames with no active joints are excluded.
 
-  These worst frames are used by the feedback system to tell the student
-  exactly when and where they deviated most.
+  The full sorted list is returned (not just top 5) so that downstream
+  consumers (TextFeedback, timeline markers) can decide how many to use.
 
 
 ================================================================================

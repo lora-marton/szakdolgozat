@@ -127,4 +127,4 @@ Return:
 Error handling:
   Catches any exception from any phase. Prints the full stack trace for
   debugging, sends a user-friendly error message via SSE, and returns None
-  (which fileGetter.py interprets as a 500 HTTP error).
+  (which routes.py interprets as a 500 HTTP error).

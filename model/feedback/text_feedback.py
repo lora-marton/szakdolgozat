@@ -4,6 +4,7 @@ Rule-based text feedback generation for dance comparison results.
 import numpy as np
 
 from model.config import DEFAULT_EXTRACTION_CONFIG
+from model.config.feedback_config import FeedbackConfig
 
 
 _JOINT_TIPS = {
@@ -20,7 +21,7 @@ class TextFeedback:
     """Rule-based text feedback and timeline marker generation."""
 
     @staticmethod
-    def generate_messages(results: dict, config) -> list[str]:
+    def generate_messages(results: dict, config: FeedbackConfig) -> list[str]:
         """Generate human-readable feedback from comparison results.
 
         Args:
@@ -72,7 +73,7 @@ class TextFeedback:
         return feedback
 
     @staticmethod
-    def extract_timeline_markers(results: dict, config) -> list[dict]:
+    def extract_timeline_markers(results: dict, config: FeedbackConfig) -> list[dict]:
         """Extract timestamps for the worst frames for the frontend video player.
 
         Worst frames are the frames with the lowest mean joint score.
@@ -274,7 +275,7 @@ class TextFeedback:
         return None
 
     @staticmethod
-    def _energy_mismatch(energy_details: dict, config) -> str | None:
+    def _energy_mismatch(energy_details: dict, config: FeedbackConfig) -> str | None:
         """Detect if the student is consistently too slow or too fast."""
         teacher_energy = energy_details.get('teacher_energy')
         student_energy = energy_details.get('student_energy')
@@ -303,7 +304,7 @@ class TextFeedback:
         return None
 
     @staticmethod
-    def _timing_warning(timing_cost: float | None, config) -> str | None:
+    def _timing_warning(timing_cost: float | None, config: FeedbackConfig) -> str | None:
         """Feedback on rhythm/sync based on normalized DTW cost."""
         if timing_cost is None:
             return None

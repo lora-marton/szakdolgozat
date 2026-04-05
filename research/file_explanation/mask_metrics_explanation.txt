@@ -128,7 +128,7 @@ Step by step:
      pyefd.reconstruct_contour evaluates the Fourier series at n_points
      (200) evenly spaced values of t from 0 to 2π. The result is a smooth
      (200, 2) array of (x, y) points forming a closed curve. Since we
-     only gave it 8 harmonics, all high-frequency jaggedness is gone.
+     only gave it 7 harmonics, all high-frequency jaggedness is gone.
 
      locus=(cx, cy) shifts the curve to the original contour's center.
 

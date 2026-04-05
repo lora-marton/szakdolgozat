@@ -5,7 +5,7 @@ This file contains all data-access and persistence logic for dance
 comparison sessions: saving results to JSON, finding sessions on disk,
 loading results, and generating SSE events.
 
-The file contains a single class (SessionService) with four static
+The file contains a single class (SessionService) with three static
 methods. No instance state — all methods are pure functions that
 operate on the filesystem and the arguments they receive.
 
@@ -62,22 +62,3 @@ load_results(session_id) -> dict | None
   Reads and parses results.json from a session directory. Returns the
   parsed dict, or None if the file doesn't exist. The caller (routes.py)
   handles the None case by raising HTTP 404.
-
-
-event_generator(queue) -> AsyncGenerator
-─────────────────────────────────────────
-
-  Async generator that consumes status messages from an asyncio.Queue
-  and yields them as Server-Sent Events.
-
-  The protocol:
-    - Data messages: "data: Processing frame 120...\n\n"
-    - Keep-alive comments: ": keep-alive\n\n"
-
-  The 1-second timeout on queue.get() ensures the generator yields
-  something regularly even when no status updates are being produced.
-  Without keep-alives, the browser's EventSource would eventually
-  time out and close the connection.
-
-  The queue is passed as a parameter (not accessed as a global) so
-  the service layer stays decoupled from the routes module.

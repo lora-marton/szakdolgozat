@@ -31,7 +31,8 @@ generate_messages(results, config=None) -> list[str]
     4. Trajectory warning   — if floor movement path is off
     5. Shape warning        — if silhouette doesn't match
     6. Energy mismatch      — if student is too slow or too exaggerated
-    7. Praise messages      — compliments for high-scoring components
+    7. Timing warning       — if rhythm/sync is off (or praise if good)
+    8. Praise messages      — compliments for high-scoring components
 
   Each section is produced by a private helper method. The result is
   a variable-length list — entries are only added when thresholds are
@@ -39,17 +40,21 @@ generate_messages(results, config=None) -> list[str]
   3 praise) while a poor performance may return 8+.
 
 
-extract_timeline_markers(results) -> list[dict]
-────────────────────────────────────────────────
+extract_timeline_markers(results, config) -> list[dict]
+────────────────────────────────────────────────────────
 
   Converts the worst_frames list from the comparison results into
   timestamped markers for the frontend video player. Each marker has:
 
-    {'time': 1.4, 'label': 'left_elbow (off by 35.2 degrees)'}
+    {'time': 1.4, 'label': '52.3%'}
 
   The time is in seconds, calculated relative to the feedback video
   (which uses audio offset trimming, not DTW alignment). This is done
   via the shared _frame_to_seconds helper.
+
+  Markers are spaced at least config.min_marker_gap seconds apart
+  (default 1.0s) so they don't cluster at the same moment. Up to 5
+  markers are returned.
 
 
 ================================================================================
@@ -60,12 +65,12 @@ _overall_summary(score) -> str
 ──────────────────────────────
 
   Returns a single sentence based on the overall score using four tiers:
-    >= 85  ->  "Excellent performance!"
+    >= 80  ->  "Excellent performance!"
     >= 70  ->  "Good performance with room for improvement."
     >= 50  ->  "Decent attempt — several areas need work."
     <  50  ->  "This needs more practice."
 
-  The thresholds (85/70/50) were chosen to be somewhat generous —
+  The thresholds (80/70/50) were chosen to be somewhat generous —
   beginners comparing against professionals should still get
   encouraging feedback.
 
@@ -74,7 +79,8 @@ _worst_moment(worst_frames, results) -> str | None
 ──────────────────────────────────────────────────
 
   Highlights the single biggest error. Uses the first entry from
-  worst_frames (already sorted by error magnitude in SkeletonMetrics).
+  worst_frames (already sorted by score ascending in SkeletonMetrics).
+  Each entry is a (dtw_idx, frame_score) tuple.
 
   Calls _frame_to_seconds to convert the DTW alignment index to a
   timestamp in the feedback video. If the timestamp can't be computed
@@ -85,28 +91,40 @@ _worst_moment(worst_frames, results) -> str | None
 _joint_warnings(per_joint_scores, threshold) -> list[str]
 ─────────────────────────────────────────────────────────
 
-  Iterates over all 16 per-joint scores, sorted ascending (worst
-  first). Any joint scoring below the threshold (default 70.0) gets
-  a warning message.
+  Flags joints that scored below the warning threshold (default 60.0),
+  grouping left/right variants of the same body part.
 
-  The _JOINT_TIPS dict at module level maps body part stems (e.g.
-  'elbow', 'knee') to actionable advice strings. The matching uses
-  substring containment:
+  Grouping logic:
+    Joints starting with 'left_' or 'right_' have their side stripped
+    to produce a base name (e.g. 'left_elbow' → base='elbow', side='left').
+    Joints without a side prefix get side=None.
 
-    for key, msg in _JOINT_TIPS.items():
-        if key in joint:  # 'elbow' in 'left_elbow' -> True
-            tip = msg
-            break
+    All low-scoring joints are grouped by base name into a dict:
+      groups = {'elbow': {'left': 45.2, 'right': 62.1}, ...}
 
-  This handles both left/right variants with a single dict entry.
-  If no tip matches (e.g. 'inner_shoulder'), a generic message is used.
+    Groups are sorted by their worst score (ascending).
+
+  For each group:
+    - The _JOINT_TIPS dict at module level maps body part stems
+      ('elbow', 'knee', etc.) to actionable advice strings, using
+      substring containment:
+        for key, msg in _JOINT_TIPS.items():
+            if key in base:  # 'elbow' in 'elbow' -> True
+                tip = msg; break
+    - If no tip matches, a generic message is used.
+    - If both left and right are present: "Elbows scored 45.2% (left) /
+      62.1% (right). <tip>"
+    - If only one side: "Left elbow scored 45.2%. <tip>"
+
+  This grouping avoids redundant messages like "Left elbow is off" and
+  "Right elbow is off" appearing as separate warnings.
 
 
 _trajectory_warning(trajectory_score, threshold) -> str | None
 ──────────────────────────────────────────────────────────────
 
   Simple threshold check. If the trajectory score is below the
-  direction_warn_threshold (default 70.0, on the 0-100 scale like
+  direction_warn_threshold (default 60.0, on the 0-100 scale like
   all other thresholds), returns a warning about floor movement path.
 
 
@@ -135,11 +153,26 @@ _energy_mismatch(energy_details, config) -> str | None
   no energy data is available.
 
 
+_timing_warning(timing_cost, config) -> str | None
+───────────────────────────────────────────────────
+
+  Feedback on rhythm/sync based on the normalized DTW cost from the
+  alignment phase. This cost reflects how much temporal warping was
+  needed — lower values mean the student stayed more in sync.
+
+  Two thresholds from config:
+    - Above timing_warn_threshold (0.67): "Your timing seems off" warning.
+    - At or below timing_praise_threshold (0.60): "Great timing" praise.
+    - Between the two thresholds: returns None (no message).
+
+  Returns None if timing_cost is not available in the results.
+
+
 _praise(skeleton_score, trajectory_score, mask_score, threshold) -> list[str]
 ─────────────────────────────────────────────────────────────────────────────
 
   Compliments for each component scoring above the praise_threshold
-  (default 80.0). Up to 3 messages can be generated (one per metric).
+  (default 75.0). Up to 3 messages can be generated (one per metric).
   These appear last in the feedback list, after all warnings.
 
 
@@ -192,12 +225,15 @@ Configuration Dependencies
 ================================================================================
 
   FeedbackConfig fields used:
-    - joint_warn_threshold (70.0)   — _joint_warnings
-    - direction_warn_threshold (70.0) — _trajectory_warning
-    - mask_warn_threshold (60.0)    — _shape_warning
-    - praise_threshold (80.0)       — _praise
-    - energy_low_threshold (0.6)    — _energy_mismatch
-    - energy_high_threshold (1.4)   — _energy_mismatch
+    - joint_warn_threshold (60.0)      — _joint_warnings
+    - direction_warn_threshold (60.0)  — _trajectory_warning
+    - mask_warn_threshold (60.0)       — _shape_warning
+    - praise_threshold (75.0)          — _praise
+    - min_marker_gap (1.0)             — extract_timeline_markers
+    - energy_low_threshold (0.6)       — _energy_mismatch
+    - energy_high_threshold (1.4)      — _energy_mismatch
+    - timing_warn_threshold (0.67)     — _timing_warning
+    - timing_praise_threshold (0.60)   — _timing_warning
 
   ExtractionConfig fields used (via DEFAULT_EXTRACTION_CONFIG):
     - target_fps                    — _frame_to_seconds
@@ -208,9 +244,9 @@ Configuration Dependencies
 Design Notes
 ================================================================================
 
-  - No emojis in feedback text. The frontend is responsible for
-    adding icons or visual decorations. This keeps the backend output
-    format-agnostic.
+  - Feedback text uses ⚠ (warning) and ✓ (check mark) emojis to
+    visually distinguish warnings from praise messages. These are
+    included intentionally for direct display in the frontend.
 
   - Messages are plain strings, not structured objects. The frontend
     can parse them if needed, but the primary use case is displaying
