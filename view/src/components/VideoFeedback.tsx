@@ -175,7 +175,9 @@ const VideoFeedback = ({ videoUrl, timelineMarkers = [] }: VideoFeedbackProps) =
                     sx={{ mt: 2, display: 'block', color: 'text.secondary', fontStyle: 'italic' }}
                 >
                     Teacher (left) vs Student (right). The blue skeleton on the student side
-                    shows where the teacher's joints were.
+                    shows where the teacher's joints were. The dots on the timeline mark your
+                    worst moments — hover over them to see the score, and click to jump there.
+                    Left/right refers to the dancer's own left and right.
                 </Typography>
             </Paper>
         </Fade>

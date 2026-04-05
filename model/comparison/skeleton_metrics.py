@@ -176,9 +176,10 @@ class SkeletonMetrics:
         else:
             score = 100.0
 
-        # Worst frames: all active frames sorted by mean score (ascending).
-        # extract_timeline_markers handles gap filtering and final selection.
-        mean_frame_scores = np.where(active, frame_scores, 100.0).mean(axis=1)
+        any_active = active.any(axis=1)
+        active_counts = np.maximum(active.sum(axis=1), 1)
+        active_sums = np.where(active, frame_scores, 0.0).sum(axis=1)
+        mean_frame_scores = np.where(any_active, active_sums / active_counts, 100.0)
         worst_indices = np.argsort(mean_frame_scores)
 
         worst_frames = [

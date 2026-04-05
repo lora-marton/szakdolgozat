@@ -61,6 +61,11 @@ class TextFeedback:
         if energy_msg:
             feedback.append(energy_msg)
 
+        timing_cost = results.get('timing_cost')
+        timing_msg = TextFeedback._timing_warning(timing_cost, config)
+        if timing_msg:
+            feedback.append(timing_msg)
+
         praise = TextFeedback._praise(skeleton, trajectory, mask, config.praise_threshold)
         feedback.extend(praise)
 
@@ -169,7 +174,7 @@ class TextFeedback:
     @staticmethod
     def _overall_summary(score: float) -> str:
         """One-liner summary based on the overall score."""
-        if score >= 85:
+        if score >= 80:
             return f"Excellent performance! Overall score: {score}%."
         elif score >= 70:
             return f"Good performance with room for improvement. Overall score: {score}%."
@@ -201,26 +206,49 @@ class TextFeedback:
 
         if time_sec is not None:
             return (
-                f"Your biggest deviation was at {time_sec:.1f}s "
+                f"⚠ Your biggest deviation was at {time_sec:.1f}s "
                 f"(score: {frame_score}%)."
             )
 
-        return f"Your biggest deviation scored {frame_score}%."
+        return f"⚠ Your biggest deviation scored {frame_score}%."
 
     @staticmethod
     def _joint_warnings(per_joint_scores: dict, threshold: float) -> list[str]:
-        """Flag joints that scored below the warning threshold."""
+        """Flag joints that scored below the warning threshold, grouped by body part."""
+        groups: dict[str, dict[str | None, float]] = {}
+        for joint, score in per_joint_scores.items():
+            if score >= threshold:
+                continue
+            if joint.startswith('left_'):
+                side, base = 'left', joint[5:]
+            elif joint.startswith('right_'):
+                side, base = 'right', joint[6:]
+            else:
+                side, base = None, joint
+            groups.setdefault(base, {})[side] = score
+
         warnings = []
-        for joint, score in sorted(per_joint_scores.items(), key=lambda x: x[1]):
-            if score < threshold:
-                tip = None
-                for key, msg in _JOINT_TIPS.items():
-                    if key in joint:
-                        tip = msg
-                        break
-                if tip is None:
-                    tip = f'Your {joint} positioning needs improvement.'
-                warnings.append(f"{TextFeedback._format_joint(joint)} scored {score}%. {tip}")
+        for base, sides in sorted(groups.items(), key=lambda x: min(x[1].values())):
+            tip = None
+            for key, msg in _JOINT_TIPS.items():
+                if key in base:
+                    tip = msg
+                    break
+            formatted_base = base.replace('_', ' ')
+            if tip is None:
+                tip = f'Your {formatted_base} positioning needs improvement.'
+
+            if 'left' in sides and 'right' in sides:
+                name = formatted_base + 's'
+                label = f"{sides['left']}% (left) / {sides['right']}% (right)"
+            else:
+                side, score = next(iter(sides.items()))
+                name = f"{side} {formatted_base}" if side else formatted_base
+                label = f"{score}%"
+
+            name = name[0].upper() + name[1:]
+            warnings.append(f"⚠ {name} scored {label}. {tip}")
+
         return warnings
 
     @staticmethod
@@ -228,7 +256,7 @@ class TextFeedback:
         """Warn if floor movement direction/path doesn't match."""
         if trajectory_score < threshold:
             return (
-                f"Trajectory score: {trajectory_score}%. "
+                f"⚠ Trajectory score: {trajectory_score}%. "
                 "Your floor movement path differs from the teacher's — "
                 "focus on moving in the same direction and covering similar ground."
             )
@@ -239,7 +267,7 @@ class TextFeedback:
         """Warn about body silhouette differences."""
         if mask_score < threshold:
             return (
-                f"Silhouette score: {mask_score}%. "
+                f"⚠ Silhouette score: {mask_score}%. "
                 "Your overall body shape differs from the teacher's — "
                 "check if your limbs are extended/contracted to the same degree."
             )
@@ -264,14 +292,28 @@ class TextFeedback:
 
         if ratio < config.energy_low_threshold:
             return (
-                "Your movements appear less energetic than the teacher's — "
+                "⚠ Your movements appear less energetic than the teacher's — "
                 "try to use more power and bigger motions."
             )
         elif ratio > config.energy_high_threshold:
             return (
-                "Your movements appear more exaggerated than the teacher's — "
+                "⚠ Your movements appear more exaggerated than the teacher's — "
                 "try to control your motion and match the teacher's intensity."
             )
+        return None
+
+    @staticmethod
+    def _timing_warning(timing_cost: float | None, config) -> str | None:
+        """Feedback on rhythm/sync based on normalized DTW cost."""
+        if timing_cost is None:
+            return None
+        if timing_cost >= config.timing_warn_threshold:
+            return (
+                "⚠ Your timing seems off — "
+                "try to stay in sync with the teacher's rhythm."
+            )
+        if timing_cost <= config.timing_praise_threshold:
+            return "✓ Great timing — you stayed well in sync with the teacher!"
         return None
 
     @staticmethod
@@ -284,11 +326,11 @@ class TextFeedback:
         """Compliment components that scored above the praise threshold."""
         messages = []
         if skeleton_score >= threshold:
-            messages.append(f"Great joint accuracy! Skeleton score: {skeleton_score}%.")
+            messages.append(f"✓ Great joint accuracy! Skeleton score: {skeleton_score}%.")
         if trajectory_score >= threshold:
-            messages.append(f"Excellent floor movement! Trajectory score: {trajectory_score}%.")
+            messages.append(f"✓ Excellent floor movement! Trajectory score: {trajectory_score}%.")
         if mask_score >= threshold:
-            messages.append(f"Body shape closely matches the teacher! Mask score: {mask_score}%.")
+            messages.append(f"✓ Body shape closely matches the teacher! Mask score: {mask_score}%.")
         return messages
 
     @staticmethod

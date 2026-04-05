@@ -39,6 +39,8 @@ class FeedbackGenerator:
         if config is None:
             config = DEFAULT_FEEDBACK_CONFIG
 
+        print(f"Timing cost: {results['timing_cost']}")
+
         feedback = TextFeedback.generate_messages(results, config)
         timeline_markers = TextFeedback.extract_timeline_markers(results, config)
         video_path = VideoFeedback.render_video(

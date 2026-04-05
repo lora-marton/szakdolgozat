@@ -14,9 +14,9 @@ interface ResultsPanelProps {
 
 const ScoreBar = ({ label, value }: { label: string; value: number }) => {
     const theme = useTheme();
-    const color = value >= 80
+    const color = value >= 75
         ? theme.palette.score.good
-        : value >= 60
+        : value >= 50
             ? theme.palette.score.ok
             : theme.palette.score.bad;
 
@@ -47,6 +47,8 @@ const ScoreBar = ({ label, value }: { label: string; value: number }) => {
 
 // ── Joint scores breakdown ──────────────────────────────────────────────
 
+const formatJoint = (name: string) => name.replace(/_/g, ' ');
+
 const JointScores = ({ scores }: { scores: Record<string, number> }) => {
     const theme = useTheme();
 
@@ -65,12 +67,11 @@ const JointScores = ({ scores }: { scores: Record<string, number> }) => {
                     return (
                         <Chip
                             key={joint}
-                            label={`${joint}: ${score}%`}
+                            label={`${formatJoint(joint)}: ${score}%`}
                             size="small"
                             variant="outlined"
                             sx={{
                                 fontWeight: 500,
-                                textTransform: 'capitalize',
                                 color: customColor,
                                 borderColor: customColor,
                                 // Add a tiny bit of background tint for richness
@@ -125,9 +126,9 @@ const FeedbackMessage = ({ message }: { message: string }) => {
 
 const ResultsPanel = ({ results }: ResultsPanelProps) => {
     const theme = useTheme();
-    const overallColor = results.overall_score >= 80
+    const overallColor = results.overall_score >= 75
         ? theme.palette.score.good
-        : results.overall_score >= 60
+        : results.overall_score >= 50
             ? theme.palette.score.ok
             : theme.palette.score.bad;
 
