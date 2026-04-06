@@ -1,41 +1,41 @@
-import { createTheme } from '@mui/material/styles';
+import { createTheme } from '@mui/material/styles'
 
 declare module '@mui/material/styles' {
     interface Palette {
         score: {
-            good: string;
-            ok: string;
-            bad: string;
-        };
+            good: string
+            ok: string
+            bad: string
+        }
         feedbackCard: {
-            warningBg: string;
-            warningBorder: string;
-            praiseBg: string;
-            praiseBorder: string;
-            neutralBg: string;
-            neutralBorder: string;
-        };
+            warningBg: string
+            warningBorder: string
+            praiseBg: string
+            praiseBorder: string
+            neutralBg: string
+            neutralBorder: string
+        }
         ssePanel: {
-            bg: string;
-        };
+            bg: string
+        }
     }
     interface PaletteOptions {
         score?: {
-            good: string;
-            ok: string;
-            bad: string;
-        };
+            good: string
+            ok: string
+            bad: string
+        }
         feedbackCard?: {
-            warningBg: string;
-            warningBorder: string;
-            praiseBg: string;
-            praiseBorder: string;
-            neutralBg: string;
-            neutralBorder: string;
-        };
+            warningBg: string
+            warningBorder: string
+            praiseBg: string
+            praiseBorder: string
+            neutralBg: string
+            neutralBorder: string
+        }
         ssePanel?: {
-            bg: string;
-        };
+            bg: string
+        }
     }
 }
 
@@ -117,6 +117,6 @@ const theme = createTheme({
             },
         },
     },
-});
+})
 
-export default theme;
+export default theme

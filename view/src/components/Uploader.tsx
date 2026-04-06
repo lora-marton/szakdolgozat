@@ -1,27 +1,30 @@
-import React, { useState, useRef } from 'react';
-import { Box, Paper, Typography, Button } from '@mui/material';
-import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import { useState, useRef, type ChangeEvent } from 'react'
+import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
+import Paper from '@mui/material/Paper'
+import Typography from '@mui/material/Typography'
+import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 
 interface UploaderProps {
-    person: string;
-    fileSetter: (file: File) => void;
+    person: string
+    fileSetter: (file: File) => void
 }
 
 const Uploader = ({ person, fileSetter }: UploaderProps) => {
-    const [file, setFile] = useState<File | null>(null);
-    const inputRef = useRef<HTMLInputElement>(null);
+    const [file, setFile] = useState<File | null>(null)
+    const inputRef = useRef<HTMLInputElement>(null)
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
-            setFile(e.target.files[0]);
-            fileSetter(e.target.files[0]);
-            console.log("File selected:", e.target.files[0].name);
+            setFile(e.target.files[0])
+            fileSetter(e.target.files[0])
+            console.log("File selected:", e.target.files[0].name)
         }
-    };
+    }
 
     const handleSearchClick = () => {
-        inputRef.current?.click();
-    };
+        inputRef.current?.click()
+    }
 
     return (
         <Box sx={{ p: { xs: 1, md: 4 }, display: 'flex', justifyContent: 'center' }}>
@@ -29,7 +32,7 @@ const Uploader = ({ person, fileSetter }: UploaderProps) => {
                 elevation={3}
                 sx={{
                     width: '100%',
-                    maxWidth: 600,
+                    maxWidth: { xs: 350, sm: 550, md: 400, lg: 550, xl: 750 },
                     p: 4,
                     textAlign: 'center',
                     bgcolor: 'background.paper',
@@ -81,7 +84,7 @@ const Uploader = ({ person, fileSetter }: UploaderProps) => {
                 </Box>
             </Paper>
         </Box>
-    );
-};
+    )
+}
 
-export default Uploader;
+export default Uploader

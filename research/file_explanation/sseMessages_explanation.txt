@@ -1,0 +1,53 @@
+SseMessages.tsx — Processing Log Display
+=========================================
+
+Displays the real-time SSE status messages from the backend as a
+scrollable log panel. Shows a spinner while processing is in progress
+and hides entirely when there are no messages.
+
+
+================================================================================
+Props (SseMessagesProps)
+================================================================================
+
+  messages   string[]   Accumulated SSE status messages from Feedback.tsx
+
+
+================================================================================
+Behavior
+================================================================================
+
+  - Returns null when messages array is empty (invisible before processing)
+  - Each new message fades in with a 400ms Fade animation
+  - The last message is highlighted: primary color, bold (600)
+  - All other messages are secondary color, normal weight (400)
+  - A CircularProgress spinner appears at the bottom until the last
+    message contains "Processing complete."
+  - Panel scrolls vertically when messages exceed 300px max height
+
+
+================================================================================
+Styling
+================================================================================
+
+  useTheme() is called to access the custom ssePanel.bg palette color,
+  which is a semi-transparent light purple defined in theme.ts.
+
+  Each message Typography has className="SseLogEntry", which applies the
+  monospace font (Roboto Mono, 0.8rem) defined in the theme's
+  MuiTypography component override. This gives the log a terminal-like
+  appearance.
+
+  The Paper has a primary-colored border, elevation 2, and is capped at
+  350px wide and 300px tall.
+
+
+================================================================================
+Layout
+================================================================================
+
+  Paper (ssePanel background, bordered, scrollable)
+    ├─ Typography — "Processing Log" title
+    └─ Stack (gap 0.5)
+         ├─ Fade → Typography per message (monospace, last highlighted)
+         └─ Fade → CircularProgress spinner (until complete)

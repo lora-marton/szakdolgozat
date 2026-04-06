@@ -1,0 +1,90 @@
+Uploader.tsx — Single Video File Picker
+=========================================
+
+A reusable upload card that lets the user pick one video file via the
+native file browser. Used twice by FileChooser — once for teacher, once
+for student.
+
+
+================================================================================
+Props (UploaderProps)
+================================================================================
+
+  person      string              Display label ("Teacher" or "Student")
+  fileSetter  (file: File) => void   Callback to pass the selected file
+                                     up to the parent (FileChooser)
+
+
+================================================================================
+State and Refs
+================================================================================
+
+  file        File | null   Tracks the selected file locally for display
+  inputRef    ref to HTMLInputElement   References the hidden file input
+
+  The component keeps its own file state for rendering the filename.
+  The parent's state is updated separately via fileSetter.
+
+
+================================================================================
+Event Handlers
+================================================================================
+
+  handleFileChange(e: ChangeEvent<HTMLInputElement>)
+  ──────────────────────────────────────────────────
+
+    Fires when the native file input changes. Guards against empty
+    selection, then:
+      1. Stores the file in local state (for filename display)
+      2. Passes it to the parent via fileSetter
+      3. Logs the filename to console for debugging
+
+
+  handleSearchClick()
+  ───────────────────
+
+    Programmatically clicks the hidden file input via inputRef. This
+    lets a styled MUI Button trigger the native file browser instead
+    of showing the default browser file input.
+
+
+================================================================================
+Layout
+================================================================================
+
+  Two visual states controlled by the file null check:
+
+  No file selected:
+    ┌─────────────────────────┐
+    │  Upload a video of X    │
+    │                         │
+    │   [🔼 Search file]     │
+    └─────────────────────────┘
+
+  File selected:
+    ┌─────────────────────────┐
+    │  Upload a video of X    │
+    │                         │
+    │  Selected: filename.mp4 │
+    │                         │
+    │  [🔼 Search other file] │
+    └─────────────────────────┘
+
+  The card is a Paper with elevation, primary border, and responsive
+  maxWidth across 5 breakpoints (xs: 350, sm: 550, md: 400, lg: 550,
+  xl: 750). The hidden <input type="file" accept="video/*"> is never
+  visible — the Button triggers it.
+
+
+================================================================================
+Design Notes
+================================================================================
+
+  - The hidden input pattern (display: 'none' + ref.click()) is the
+    standard React approach for custom-styled file pickers. The native
+    <input type="file"> is visually inconsistent across browsers.
+
+  - accept="video/*" restricts the file browser to video formats only.
+
+  - The component is fully reusable — it has no knowledge of teacher/
+    student semantics, submission logic, or API calls.

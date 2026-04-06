@@ -1,13 +1,18 @@
-import { Box, Paper, Typography, Fade, CircularProgress } from '@mui/material';
-import { useTheme } from '@mui/material/styles';
+import { useTheme } from '@mui/material/styles'
+import Box from '@mui/material/Box'
+import CircularProgress from '@mui/material/CircularProgress'
+import Fade from '@mui/material/Fade'
+import Paper from '@mui/material/Paper'
+import Stack from '@mui/material/Stack'
+import Typography from '@mui/material/Typography'
 
 interface SseMessagesProps {
-    messages: string[];
+    messages: string[]
 }
 
 const SseMessages = ({ messages }: SseMessagesProps) => {
-    const theme = useTheme();
-    if (messages.length === 0) return null;
+    const theme = useTheme()
+    if (messages.length === 0) return null
 
     return (
         <Paper
@@ -28,7 +33,7 @@ const SseMessages = ({ messages }: SseMessagesProps) => {
             <Typography variant="subtitle2" sx={{ mb: 1, color: 'text.secondary', fontWeight: 600 }}>
                 Processing Log
             </Typography>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+            <Stack gap={0.5}>
                 {messages.map((msg, i) => (
                     <Fade in key={i} timeout={400}>
                         <Typography
@@ -51,9 +56,9 @@ const SseMessages = ({ messages }: SseMessagesProps) => {
                         </Box>
                     </Fade>
                 )}
-            </Box>
+            </Stack>
         </Paper>
-    );
-};
+    )
+}
 
-export default SseMessages;
+export default SseMessages

@@ -1,0 +1,110 @@
+ResultsPanel — Feedback Results Display
+========================================
+
+Four components that together render the full feedback results. Split
+into separate files for consistency, each with a single responsibility.
+
+
+================================================================================
+ScoreBar.tsx — Horizontal Score Gauge
+================================================================================
+
+  Props:
+    label   string   Score category name (e.g. "Skeleton (Joint Accuracy)")
+    value   number   Score percentage (0-100)
+
+  Renders a label + percentage on one line and a colored LinearProgress
+  bar below. The bar fill color is determined by score thresholds:
+    >= 75  score.good (tealy green)
+    >= 50  score.ok (amber)
+    < 50   score.bad (rosy red)
+
+  The bar has rounded corners (borderRadius 5) and 10px height. The
+  background track is a subtle black at 8% opacity.
+
+
+================================================================================
+JointScores.tsx — Per-Joint Score Chips
+================================================================================
+
+  Props:
+    scores   Record<string, number>   Joint name to score mapping
+
+  Sorts entries ascending by score (worst joints first) and renders
+  each as a MUI Chip with color-coded border and text. Uses slightly
+  different thresholds than ScoreBar:
+    >= 80  score.good
+    >= 60  score.ok
+    < 60   score.bad
+
+  The formatJoint helper replaces underscores with spaces for display
+  (e.g. "left_knee" becomes "left knee"). Each chip has a light blue
+  background tint (#bde2f3ff) for visual consistency.
+
+  Laid out with flexWrap so chips flow naturally across available width.
+
+
+================================================================================
+FeedbackMessage.tsx — Single Feedback Card
+================================================================================
+
+  Props:
+    message   string   Raw feedback string from TextFeedback
+
+  Detects emoji prefixes in the message:
+    ⚠  warning — amber icon, coral background/border
+    ✓  praise — green icon, green background/border
+    neither — neutral, purple background/border
+
+  Strips the emoji prefix and replaces it with a MUI icon
+  (WarningAmberIcon or CheckCircleIcon). Background and border colors
+  come from the feedbackCard palette defined in theme.ts.
+
+  The icon is slightly offset (mt: 0.2) to align with the first line
+  of text.
+
+
+================================================================================
+ResultsPanel.tsx — Main Panel (Orchestrator)
+================================================================================
+
+  Props:
+    results   FeedbackResponse   Full feedback data from apiService
+
+  Wraps everything in a Fade animation (600ms) and a bordered Paper.
+  Renders five sections top to bottom:
+
+    1. Overall score — large centered number (h3, bold 800), color-coded
+       with the same thresholds as ScoreBar (>= 75 / >= 50 / < 50)
+
+    2. Component scores — three ScoreBar instances:
+       - Skeleton (Joint Accuracy)
+       - Trajectory (Floor Movement)
+       - Silhouette (Body Shape)
+
+    3. Joint breakdown — conditional, only rendered if per_joint_scores
+       has entries. Shows a JointScores chip grid.
+
+    4. Feedback messages — conditional, only rendered if feedback array
+       is non-empty. Maps each string to a FeedbackMessage card in a
+       Stack with gap 1.
+
+  Sections are separated by MUI Dividers. Each section has a subtitle2
+  header in secondary text color.
+
+
+================================================================================
+Data Flow
+================================================================================
+
+  apiService.getFeedback()
+       │
+       ▼
+  Feedback.tsx (stores in results state)
+       │
+       ▼
+  ResultsPanel (receives results prop)
+       │
+       ├─ ScoreBar × 3 (skeleton, trajectory, mask scores)
+       ├─ JointScores (per_joint_scores record)
+       └─ FeedbackMessage × N (feedback string array)

@@ -1,69 +1,74 @@
-import { useRef, useState, useEffect } from 'react';
-import { Box, Paper, Typography, Fade, IconButton, Slider, Tooltip } from '@mui/material';
-import OndemandVideoIcon from '@mui/icons-material/OndemandVideo';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import PauseIcon from '@mui/icons-material/Pause';
+import { useRef, useState, useEffect } from 'react'
+import Box from '@mui/material/Box'
+import Fade from '@mui/material/Fade'
+import IconButton from '@mui/material/IconButton'
+import Paper from '@mui/material/Paper'
+import Slider from '@mui/material/Slider'
+import Tooltip from '@mui/material/Tooltip'
+import Typography from '@mui/material/Typography'
+import OndemandVideoIcon from '@mui/icons-material/OndemandVideo'
+import PauseIcon from '@mui/icons-material/Pause'
+import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 
-import { videoUrl as buildVideoUrl } from '../api/apiService';
+import { videoUrl as buildVideoUrl } from '../api/apiService'
 
 interface VideoFeedbackProps {
-    videoUrl: string;
-    timelineMarkers?: { time: number; label: string }[];
+    videoUrl: string
+    timelineMarkers?: { time: number; label: string }[]
 }
 
 const formatTime = (timeInSeconds: number) => {
-    if (isNaN(timeInSeconds)) return "00:00";
-    const minutes = Math.floor(timeInSeconds / 60);
-    const seconds = Math.floor(timeInSeconds % 60);
-    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-};
+    if (isNaN(timeInSeconds)) return "00:00"
+    const minutes = Math.floor(timeInSeconds / 60)
+    const seconds = Math.floor(timeInSeconds % 60)
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+}
 
 const VideoFeedback = ({ videoUrl, timelineMarkers = [] }: VideoFeedbackProps) => {
-    const fullUrl = buildVideoUrl(videoUrl);
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [currentTime, setCurrentTime] = useState(0);
-    const [duration, setDuration] = useState(1); // Default to avoid division by 0
+    const fullUrl = buildVideoUrl(videoUrl)
+    const videoRef = useRef<HTMLVideoElement>(null)
+    const [isPlaying, setIsPlaying] = useState(false)
+    const [currentTime, setCurrentTime] = useState(0)
+    const [duration, setDuration] = useState(1)
 
-    // Force video to load duration
     useEffect(() => {
         if (videoRef.current) {
-            videoRef.current.load();
+            videoRef.current.load()
         }
-    }, [fullUrl]);
+    }, [fullUrl])
 
     const togglePlay = () => {
-        if (!videoRef.current) return;
+        if (!videoRef.current) return
         if (isPlaying) {
-            videoRef.current.pause();
+            videoRef.current.pause()
         } else {
-            videoRef.current.play();
+            videoRef.current.play()
         }
-        setIsPlaying(!isPlaying);
-    };
+        setIsPlaying(!isPlaying)
+    }
 
     const handleTimeUpdate = () => {
         if (videoRef.current) {
-            setCurrentTime(videoRef.current.currentTime);
+            setCurrentTime(videoRef.current.currentTime)
         }
-    };
+    }
 
     const handleLoadedMetadata = () => {
         if (videoRef.current) {
-            setDuration(videoRef.current.duration);
+            setDuration(videoRef.current.duration)
         }
-    };
+    }
 
     const handleVideoEnd = () => {
-        setIsPlaying(false);
-    };
+        setIsPlaying(false)
+    }
 
     const handleSliderChange = (_: Event, newValue: number | number[]) => {
         if (videoRef.current && typeof newValue === 'number') {
-            videoRef.current.currentTime = newValue;
-            setCurrentTime(newValue);
+            videoRef.current.currentTime = newValue
+            setCurrentTime(newValue)
         }
-    };
+    }
 
     const marks = timelineMarkers.map((marker) => ({
         value: marker.time,
@@ -77,20 +82,20 @@ const VideoFeedback = ({ videoUrl, timelineMarkers = [] }: VideoFeedbackProps) =
                         borderRadius: '50%',
                         cursor: 'pointer',
                         transform: 'translate(-50%, -50%)',
-                        mt: '-15px' // Align with slider track
+                        mt: '-15px'
                     }}
                     onClick={(e) => {
-                        e.stopPropagation();
+                        e.stopPropagation()
                         if (videoRef.current) {
-                            videoRef.current.currentTime = marker.time;
-                            setCurrentTime(marker.time);
-                            if (!isPlaying) togglePlay();
+                            videoRef.current.currentTime = marker.time
+                            setCurrentTime(marker.time)
+                            if (isPlaying) togglePlay()
                         }
                     }}
                 />
             </Tooltip>
         )
-    }));
+    }))
 
     return (
         <Fade in timeout={600}>
@@ -139,7 +144,6 @@ const VideoFeedback = ({ videoUrl, timelineMarkers = [] }: VideoFeedbackProps) =
                     </video>
                 </Box>
 
-                {/* Custom Controls */}
                 <Box sx={{ display: 'flex', alignItems: 'center', mt: 2, gap: 2 }}>
                     <IconButton onClick={togglePlay} color="primary" sx={{ p: 0.5 }}>
                         {isPlaying ? <PauseIcon /> : <PlayArrowIcon />}
@@ -181,7 +185,7 @@ const VideoFeedback = ({ videoUrl, timelineMarkers = [] }: VideoFeedbackProps) =
                 </Typography>
             </Paper>
         </Fade>
-    );
-};
+    )
+}
 
-export default VideoFeedback;
+export default VideoFeedback

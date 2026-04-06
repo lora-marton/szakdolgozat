@@ -1,20 +1,20 @@
-import { useState } from 'react';
-import Button from '@mui/material/Button';
-import Grid from '@mui/material/Grid';
-import Uploader from './Uploader';
-import { sendFiles } from '../api/apiService';
+import { useState } from 'react'
+import Button from '@mui/material/Button'
+import Grid from '@mui/material/Grid'
+import Uploader from './Uploader'
+import { sendFiles } from '../api/apiService'
 
 const FileChooser = () => {
-    const [teacherFile, setTeacherFile] = useState<File | null>(null);
-    const [studentFile, setStudentFile] = useState<File | null>(null);
+    const [teacherFile, setTeacherFile] = useState<File | null>(null)
+    const [studentFile, setStudentFile] = useState<File | null>(null)
 
     const handleSubmit = () => {
         if (teacherFile && studentFile) {
-            console.log("Submitting teacher file:", teacherFile.name);
-            console.log("Submitting student file:", studentFile.name);
-            sendFiles(teacherFile, studentFile);
+            console.log("Submitting teacher file:", teacherFile.name)
+            console.log("Submitting student file:", studentFile.name)
+            sendFiles(teacherFile, studentFile)
         }
-    };
+    }
 
     return (
         <Grid container spacing={2} sx={{ p: { xs: 1, md: 4 }, display: 'flex', justifyContent: 'center' }}>
@@ -30,7 +30,7 @@ const FileChooser = () => {
                 </Button>
             </Grid>
         </Grid>
-    );
-};
+    )
+}
 
-export default FileChooser;
+export default FileChooser
