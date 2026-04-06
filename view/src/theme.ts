@@ -1,6 +1,5 @@
 import { createTheme } from '@mui/material/styles';
 
-// ── Custom palette extensions ───────────────────────────────────────────
 declare module '@mui/material/styles' {
     interface Palette {
         score: {
@@ -43,45 +42,36 @@ declare module '@mui/material/styles' {
 const theme = createTheme({
     palette: {
         primary: {
-            main: '#9737a3ff',          // richer, true dark magenta-purple
+            main: '#9737a3ff',
             contrastText: '#fffbffff',
         },
         secondary: {
-            main: '#2cbec6ff',          // slightly deeper cyan
+            main: '#2cbec6ff',
             contrastText: '#e0feff',
         },
         background: {
-            default: '#74c2e6ff',       // deeper icy blue
-            paper: '#9ed6f0ff',         // richer, distinct blue-cyan base
+            default: '#74c2e6ff',
+            paper: '#9ed6f0ff',
         },
         text: {
-            primary: '#4f055dff',       // darker primary for text contrast
-            secondary: '#325070ff',     // deeper slate
+            primary: '#4f055dff',
+            secondary: '#325070ff',
         },
-
-        // Semantic score colours — sit well on the light paper
         score: {
-            good: '#2a8c62ff',          // tealy green
-            ok: '#c1913fff',            // amber
-            bad: '#c43a63ff',           // rosy red
+            good: '#2a8c62ff',
+            ok: '#c1913fff',
+            bad: '#c43a63ff',
         },
-
-        // Feedback card tints — converted to hex alpha based on the score colors
-        // Format: #RRGGBBAA where AA is the hex opacity
-        // 15% opacity ≈ 26, 40% ≈ 66, 6% ≈ 0f, 18% ≈ 2e
         feedbackCard: {
-            warningBg: '#d4a36b26',     // muted coral @ 15%
-            warningBorder: '#d4a36b66', // muted coral @ 40%
-            praiseBg: '#2a8c6d26',      // tealy green @ 15%
-            praiseBorder: '#2a8c6d66',  // tealy green @ 40%
-            neutralBg: '#9737a30f',     // dark magenta @ 6%
-            neutralBorder: '#9737a32e', // dark magenta @ 18%
+            warningBg: '#d4a36b26',
+            warningBorder: '#d4a36b66',
+            praiseBg: '#2a8c6d26',
+            praiseBorder: '#2a8c6d66',
+            neutralBg: '#9737a30f',
+            neutralBorder: '#9737a32e',
         },
-
-        // SSE processing log panel (shifted slightly more purplish)
         ssePanel: {
-            // A more purplish tint, based on #6B238A but very pale
-            bg: '#6b238a1b',            // light purple @ 8%
+            bg: '#6b238a1b',
         },
     },
     typography: {

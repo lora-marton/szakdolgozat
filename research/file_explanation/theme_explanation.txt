@@ -1,0 +1,124 @@
+theme.ts — Custom Material-UI Theme
+=====================================
+
+This file defines the application's visual identity: colors, typography,
+shape, and component-level style overrides. It uses MUI's createTheme()
+to produce a theme object that is passed to ThemeProvider in main.tsx,
+making these values available to every MUI component in the tree.
+
+
+================================================================================
+Module Augmentation (declare module)
+================================================================================
+
+MUI's Palette type only knows about built-in groups (primary, secondary,
+background, text, etc.). To add custom palette groups, TypeScript's
+"module augmentation" is used — the declare module block reopens MUI's
+type definitions and extends them with three new groups:
+
+  score         Colors for score range indicators (good/ok/bad)
+  feedbackCard  Background + border colors for feedback message cards
+  ssePanel      Background color for the SSE processing log panel
+
+Both Palette (runtime read access) and PaletteOptions (creation-time
+input) must be extended. MUI uses different interfaces for reading vs
+creating themes — without augmenting both, TypeScript would error either
+when defining the palette or when accessing it in components.
+
+
+================================================================================
+Palette
+================================================================================
+
+  primary
+    Main: dark magenta-purple (#9737a3). Used for headers, buttons,
+    and accent elements. Contrast text is near-white for readability.
+
+  secondary
+    Main: cyan (#2cbec6). Used for secondary actions and accents.
+
+  background
+    default: icy blue (#74c2e6) — the page background.
+    paper: slightly lighter blue (#9ed6f0) — card/paper backgrounds.
+
+  text
+    primary: dark purple (#4f055d) — high contrast against the light
+    backgrounds. secondary: slate (#325070) — for less important text.
+
+  score
+    Three semantic colors used by ResultsPanel's ScoreBar component:
+      good: tealy green (#2a8c62) — scores >= 75
+      ok: amber (#c1913f) — scores >= 50
+      bad: rosy red (#c43a63) — scores < 50
+
+  feedbackCard
+    Semi-transparent tints with hex alpha channels (#RRGGBBAA):
+      warningBg/Border: muted coral at 15%/40% opacity
+      praiseBg/Border: tealy green at 15%/40% opacity
+      neutralBg/Border: dark magenta at 6%/18% opacity
+    Used by ResultsPanel's FeedbackMessage sub-component to color-code
+    warning, praise, and neutral feedback cards.
+
+  ssePanel
+    bg: light purple at 8% opacity (#6b238a1b). Background for the
+    SseMessages processing log panel.
+
+
+================================================================================
+Typography
+================================================================================
+
+  fontFamily: Segoe UI (Windows system font) with fallbacks through
+  Roboto, Helvetica, Arial, and generic sans-serif.
+
+  h4: bold (700) — used by the Header component for the app title.
+
+  button: no uppercase transform (textTransform: 'none'), semi-bold
+  (600). MUI buttons default to ALL CAPS; this override keeps natural
+  casing for a softer look.
+
+
+================================================================================
+Shape
+================================================================================
+
+  borderRadius: 8 — global 8px rounding applied to all MUI components
+  that respect the theme shape (Paper, Card, Button, etc.).
+
+
+================================================================================
+Component Overrides
+================================================================================
+
+  MuiButton
+    Removes the default Material elevation shadow (boxShadow: 'none')
+    and adds a subtle shadow on hover. Keeps the flat design aesthetic
+    while still providing hover feedback.
+
+  MuiPaper
+    Removes the default paper background gradient/image (backgroundImage:
+    'none'). MUI Paper has a subtle gradient in dark mode and an image
+    overlay in some configurations — this override ensures flat, solid
+    backgrounds matching the palette.
+
+  MuiTypography
+    Adds a custom CSS class selector '.SseLogEntry' with monospace font
+    (Roboto Mono) at 0.8rem. Used by SseMessages.tsx to style processing
+    log entries as terminal-like text. This approach avoids inline styles
+    by defining the class once in the theme.
+
+
+================================================================================
+Design Notes
+================================================================================
+
+  - All hex colors use the 8-digit #RRGGBBAA format. The 'ff' suffix on
+    fully opaque colors is explicit rather than omitted for consistency
+    with the alpha-channel colors in feedbackCard and ssePanel.
+
+  - The score color thresholds (good >= 75, ok >= 50, bad < 50) are
+    defined in ResultsPanel, not in the theme. The theme only provides
+    the colors; the components decide when to apply them.
+
+  - The theme is a default export, matching React convention for
+    singleton configuration objects imported in main.tsx.

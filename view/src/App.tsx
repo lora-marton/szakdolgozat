@@ -6,7 +6,7 @@ import Feedback from "./components/Feedback"
 
 const App = () => {
   return (
-    <Stack sx={{ p: 2, display: 'flex', justifyContent: 'center' }}>
+    <Stack sx={{ p: 2 }}>
       <Header />
       <Description />
       <FileChooser />

@@ -1,7 +1,5 @@
 const BASE_URL = 'http://localhost:8000';
 
-// ── Types ───────────────────────────────────────────────────────────────
-
 export interface FeedbackResponse {
     session_id: string;
     overall_score: number;
@@ -27,8 +25,6 @@ export interface DetailedFeedbackResponse extends FeedbackResponse {
     };
 }
 
-// ── Helper ──────────────────────────────────────────────────────────────
-
 async function fetchJson<T>(path: string, message?: string, options?: RequestInit): Promise<T> {
     const response = await fetch(`${BASE_URL}${path}`, options);
     if (!response.ok) {
@@ -41,9 +37,7 @@ async function fetchJson<T>(path: string, message?: string, options?: RequestIni
     return response.json();
 }
 
-// ── API calls ───────────────────────────────────────────────────────────
-
-export function sendFiles(teacherFile: File, studentFile: File) {
+export function sendFiles(teacherFile: File, studentFile: File): Promise<Record<string, unknown>> {
     const formData = new FormData();
     formData.append('teacher', teacherFile);
     formData.append('student', studentFile);
@@ -53,19 +47,19 @@ export function sendFiles(teacherFile: File, studentFile: File) {
     });
 }
 
-export function getFeedback(sessionId?: string) {
+export function getFeedback(sessionId?: string): Promise<FeedbackResponse> {
     const query = sessionId ? `?session_id=${sessionId}` : '';
     return fetchJson<FeedbackResponse>(`/feedback${query}`, 'Feedback received.');
 }
 
-export function getDetailedFeedback(sessionId?: string) {
+export function getDetailedFeedback(sessionId?: string): Promise<DetailedFeedbackResponse> {
     const query = sessionId ? `?session_id=${sessionId}` : '';
     return fetchJson<DetailedFeedbackResponse>(`/feedback/detailed${query}`, 'Detailed feedback received.');
 }
 
-export async function getSessions(): Promise<string[]> {
-    const data = await fetchJson<{ sessions: string[] }>('/sessions', 'Sessions received.');
-    return data.sessions;
+export function getSessions(): Promise<string[]> {
+    return fetchJson<{ sessions: string[] }>('/sessions', 'Sessions received.')
+        .then(data => data.sessions);
 }
 
 export function connectToEvents(): EventSource {
