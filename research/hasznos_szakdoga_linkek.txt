@@ -45,7 +45,7 @@ https://medium.com/%40markstent/dynamic-time-warping-a8c5027defb6
 
 - feedback preparation
 
-- training datasets
+- formatters: black/isort, prettier/ESlint
 
 
 
