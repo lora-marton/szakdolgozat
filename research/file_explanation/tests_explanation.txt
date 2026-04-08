@@ -1,0 +1,649 @@
+tests/ folder — Explanation
+=============================
+
+The tests/ folder contains the pytest unit and integration tests for the
+model/ package. Tests are organised one-file-per-module, plus two
+orchestrator-level integration smoke tests that drive the whole pipeline.
+All tests use synthetic data (numpy arrays, tiny mp4 files, temporary
+HDF5 files) so they run in seconds with no real dance videos or
+MediaPipe inference.
+
+A shared helper module (config_for_tests.py) takes care of adding the
+project root to sys.path so every test file can do `from model...` imports,
+and exposes three reusable synthetic-data builders: make_stick_figure_landmarks,
+make_trajectory, and make_masks.
+
+
+================================================================================
+config_for_tests.py — Shared test helpers
+================================================================================
+
+Imports:
+  - os, sys: Used to resolve the project root and extend sys.path.
+  - numpy (as np): All data builders return numpy arrays in the same
+    shapes the real pipeline expects.
+
+sys.path bootstrap:
+  - ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    Walks two directories up from this file: tests/config_for_tests.py →
+    tests/ → project root.
+  - The if-check prevents inserting the path twice when the helper is
+    imported from more than one test file.
+  - Every test file begins with
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import config_for_tests
+    so that importing this helper is enough to make `from model...` imports
+    work regardless of where pytest is launched from.
+
+make_stick_figure_landmarks(num_frames, visibility):
+  Builds a synthetic 33-landmark pose sequence arranged as a static stick
+  figure. Returns an array of shape (num_frames, 33, 4) where the last
+  dimension is [x, y, z, visibility].
+  - A dict maps the important MediaPipe joint indices (nose=0, shoulders=11,12,
+    elbows=13,14, wrists=15,16, hips=23,24, knees=25,26, ankles=27,28, plus
+    hand/foot tips) to normalized (x, y) coordinates in a T-pose-like layout.
+  - Joints not in the dict are placed at the image center (0.5, 0.5).
+  - Visibility is set to a configurable constant (default 0.95).
+  - Used across test_skeleton_metrics, test_dtw, test_motion_energy,
+    test_comparator, and test_video_processor as a "perfect" baseline.
+    Comparing such a sequence against itself should produce near-100 scores.
+
+make_trajectory(num_frames, start, velocity):
+  Builds a linear 2D trajectory of shape (num_frames, 2).
+  - Uses np.arange + broadcasting to add a constant velocity each frame.
+  - Used to give Comparator a non-trivial but predictable hip path.
+
+make_masks(num_frames, h, w, radius):
+  Builds a stack of identical uint8 circular masks (0 or 255).
+  - np.mgrid creates a coordinate grid for the (h, w) image.
+  - A boolean disk centered at (cy, cx) is converted to 0/255 uint8.
+  - np.broadcast_to repeats the single frame into (num_frames, h, w) without
+    copying memory; the trailing .copy() makes it writable and contiguous.
+
+
+================================================================================
+test_one_euro_filter.py — OneEuroFilter
+================================================================================
+
+Verifies the adaptive low-pass filter used to smooth MediaPipe landmark
+coordinates during extraction. Imports the sys.path helper and OneEuroFilter.
+
+test_constant_signal_is_preserved():
+  Feeds the filter 49 samples of the same value (5.0) at 100 Hz. Since the
+  input never changes, the filter should output exactly 5.0 every time —
+  there is no derivative to adapt to, no noise to smooth. Asserts each
+  output is within 1e-6 of 5.0.
+
+test_step_response_is_smoothed():
+  Initializes the filter at x=0 and feeds it a single jump to x=10.0 after
+  10 ms. With beta=0.0 (no adaptive speedup) the filter must partially
+  respond to the step, producing an output strictly between 0 and 10. This
+  proves smoothing is actually happening and the filter is not a
+  pass-through.
+
+test_non_positive_dt_returns_raw_value():
+  Covers the early-return branch in __call__ where te = t - t_prev <= 0.
+  Tests two sub-cases: (1) same timestamp (te = 0) and (2) an earlier
+  timestamp (te < 0, which would happen after a timestamp reset). In both
+  cases the filter should return the raw input without touching its state.
+
+test_alpha_formula_matches_reference():
+  Computes the expected smoothing factor from the formula
+      alpha = 1 / (1 + tau / te)  where  tau = 1 / (2*pi*cutoff)
+  and compares it against OneEuroFilter._alpha(te, cutoff). This is a
+  direct white-box check of the private helper to guard against formula
+  typos.
+
+test_high_beta_tracks_fast_movement():
+  Creates two filters with identical min_cutoff but very different beta
+  values (0 and 50). Feeds both a fast-moving ramp (x = i for i in 1..19)
+  at 100 Hz. The high-beta filter must end closer to the true ramp value
+  than the low-beta one, proving that beta actually controls adaptive
+  lag reduction.
+
+
+================================================================================
+test_dtw.py — DTW (Dynamic Time Warping)
+================================================================================
+
+Covers the temporal alignment helper. JOINT_INDICES at the top of the file
+mirrors the main dance joints used by ComparisonConfig.dtw_joints.
+
+test_flatten_joints_shape_and_values():
+  Builds a deterministic (2, 33, 4) array using np.arange and checks that
+  _flatten_joints with a 2-joint tuple returns a (2, 6) array where each
+  row contains the x, y, z of the selected joints in order. Guards the
+  joint-index slicing and reshape in one shot.
+
+test_identical_sequences_produce_diagonal_alignment():
+  Uses make_stick_figure_landmarks for both teacher and student (20 frames).
+  Since the sequences are identical, DTW should align frame-to-frame on
+  the diagonal with zero normalized cost. Asserts cost < 1e-3, path[0] ==
+  (0, 0), and path[-1] == (19, 19).
+
+test_shifted_sequence_still_aligns():
+  Shifts every student landmark by +0.01 in x. The student pose is
+  constant-offset from the teacher, which DTW should still align with
+  low cost (the shift is small) and produce a path of length >= 25.
+  Exercises the non-identical-but-similar code path.
+
+test_alignment_path_types_are_ints():
+  DTW.align_sequences converts alignment.index1/index2 to .tolist(), which
+  must yield python ints so callers can use the values directly as list
+  indices. This test asserts every element in every pair is a python int,
+  not a numpy scalar.
+
+test_different_length_sequences():
+  Uses teacher with 15 frames and student with 20 frames. Verifies the
+  returned path spans the full range of both inputs (max teacher index == 14,
+  max student index == 19). Catches off-by-one bugs in the index mapping.
+
+
+================================================================================
+test_skeleton_metrics.py — SkeletonMetrics
+================================================================================
+
+Covers joint-angle math, center-of-gravity computation, and the combined
+skeleton score. _landmarks_with_positions is a local helper that builds
+a (num_frames, 33, 4) array from a sparse {index: (x, y)} dict with full
+visibility — used for the hand-crafted geometry tests.
+
+test_joint_angles_right_angle():
+  Places three landmarks at (0,0), (0,1), (1,1). The angle at the middle
+  landmark between the two outer ones is exactly 90°. Asserts the computed
+  angle is within 1e-3 of 90.0.
+
+test_joint_angles_straight_line():
+  Places landmarks at (0,0), (1,0), (2,0) — collinear. The angle at the
+  middle should be 180°. Guards the arccos edge case where cos_angle
+  approaches -1.
+
+test_joint_angles_handle_degenerate_vector():
+  Places parent and joint at the same point. The vector from joint to
+  parent has zero length, so the denominator (mag_a * mag_b) would be
+  zero without the 1e-8 guard. Asserts the result is finite (not NaN).
+
+test_cog_weighted_average():
+  Places two landmarks at (0,0) and (1,0) with weights 1 and 3. By hand
+  the CoG is (0*1 + 1*3) / 4 = 0.75 in x, 0 in y. Asserts the computed
+  values match to 1e-6.
+
+test_compare_cog_perfect_match():
+  Feeds identical CoG arrays. The Euclidean distance is zero everywhere,
+  exp(0) = 1, so the score is exactly 100.0.
+
+test_compare_cog_large_distance_drops_score():
+  Feeds CoGs at opposite corners of the unit square (distance sqrt(2) ≈
+  1.41 with sigma = 0.08). The exponential decay drops the score to
+  effectively zero. Asserts score < 5.0.
+
+test_skeleton_score_identical_inputs():
+  End-to-end call of compute_skeleton_score with the default config using
+  the stick-figure builder. Both inputs are identical, so score and every
+  per-joint value should be >= 99.0.
+
+test_skeleton_score_drops_with_distorted_student():
+  Shifts the student's left elbow (13) and left wrist (15) by 0.30 in both
+  x and y. That changes the left-elbow angle and should drop the overall
+  skeleton score below 99.0.
+
+test_skeleton_score_ignores_low_visibility():
+  Uses visibility=0.0 on every landmark. In _compare_angles no frame meets
+  the visibility threshold, so active.any() is false and the fallback
+  per-joint score of 100.0 kicks in. Guards the fallback branch.
+
+
+================================================================================
+test_trajectory_metrics.py — TrajectoryMetrics
+================================================================================
+
+Unit tests for the private helpers and the public compute_trajectory_score.
+Each helper is exercised with hand-crafted vectors, then the combined score
+is tested with a few realistic scenarios.
+
+test_direction_similarity_same_direction():
+  Two equal velocity arrays — cos = 1, similarity = (1+1)/2 = 1.0.
+
+test_direction_similarity_opposite_direction():
+  Anti-parallel vectors — cos = -1, similarity = 0.0.
+
+test_direction_similarity_orthogonal():
+  Perpendicular vectors — cos = 0, similarity = 0.5.
+
+test_speed_similarity_equal_speeds():
+  Same speed array twice — min/max ratio = 1.0.
+
+test_speed_similarity_doubled_speed():
+  One speed is double the other — ratio = 2/4 = 0.5.
+
+test_trajectory_score_identical_path():
+  np.cumsum of ones builds a monotonic diagonal path. Both teacher and
+  student are identical, so score = 100.0 and direction_similarity = 1.0.
+
+test_trajectory_score_static_paths():
+  Two all-zero trajectories. np.diff is zero everywhere, nothing passes
+  the min_speed_threshold, and the function returns the hard-coded
+  fallback {'score': 100.0, 'direction_similarity': 1.0}. Guards that
+  branch.
+
+test_trajectory_score_mirrored_direction():
+  Teacher moves (+1, +1) per frame, student moves (-1, -1). Direction
+  similarity should drop below 0.1 and the overall score below 30.0.
+
+
+================================================================================
+test_mask_metrics.py — MaskMetrics
+================================================================================
+
+Covers the distance-transform shape comparison and the optical-flow frame
+energy helper. _disk_mask builds a single (h, w) uint8 circular mask for
+ad-hoc geometry.
+
+test_dtm_one_direction_identical_shapes():
+  When reference and query are the same binary mask, every query pixel
+  lies inside the reference, the outside distance is zero, and the
+  Gaussian score map is 1.0 everywhere the query is True. Asserts score
+  is exactly 1.0.
+
+test_dtm_one_direction_disjoint_shapes():
+  Places two disks in opposite corners (distance ~ 45 px, sigma = 2).
+  Every query pixel is far from the reference, so exp(-(45/2)^2) is
+  effectively 0. Asserts score < 0.01.
+
+test_compare_shapes_dtm_identical_masks():
+  Stack of 5 identical circular masks. The full pipeline
+  (EFD smoothing → DTM both directions → per-frame average) should
+  produce a mean score ≥ 0.98.
+
+test_compare_shapes_dtm_both_empty_frames():
+  All-zero masks. The early-return branch sets per-frame score to 1.0
+  and marks the frame as inactive, so the overall fallback returns 1.0.
+
+test_frame_energy_no_motion():
+  Two identical masks passed to Farneback optical flow. The flow should
+  be near zero, producing energy very close to 0.0. Asserts energy is
+  non-negative and below 0.5.
+
+test_frame_energy_shifted_mask():
+  Shifts a 14-pixel-radius disk by 12 pixels in x between two frames.
+  The optical flow energy must be higher than the static case. Asserts
+  shifted energy > static energy, proving the helper picks up motion.
+
+test_compare_mask_energy_single_frame_fallback():
+  Passes a 1-frame stack where n_frames < 2. The guard at the top of
+  _compare_mask_energy returns an empty-result dict with energy_score = 1.0.
+
+
+================================================================================
+test_motion_energy.py — MotionEnergy
+================================================================================
+
+Tests the motion-energy signal computation and active-range detection used
+during preprocessing.
+
+test_compute_motion_energy_static_pose():
+  A 10-frame stick figure with no motion. Result shape must be (9,) and
+  all values must be zero.
+
+test_compute_motion_energy_moving_pose():
+  Shifts every landmark by 0.01 each frame. Every frame transition has the
+  same displacement, so the energy array should be positive and constant.
+
+test_find_active_range_single_burst():
+  A 60-frame energy signal with a single burst between frames 20 and 40.
+  With threshold_ratio=0.15 and a 5-frame window, find_active_range should
+  detect start ≈ 20 and end ≈ 40 (allowing +/- 2 for window-edge tolerance).
+
+test_find_active_range_noise_below_threshold():
+  Random low-amplitude noise (uniform 0 to 0.05) with a clean burst from
+  20 to 35. A 0.5 threshold ratio means the noise is below threshold, so
+  start >= 18 and end <= 37.
+
+test_find_active_range_short_burst_rejected():
+  A 2-frame burst at the start plus a real 12-frame burst starting at
+  frame 20. The short burst should not satisfy min_duration_frames=5,
+  so start must be >= 18.
+
+
+================================================================================
+test_preprocessor_helpers.py — Preprocessor helpers
+================================================================================
+
+Covers the private _slice_data, _apply_offset, and _load_session_data
+methods without touching the heavy AudioSync path. _make_data builds a
+small synthetic data dict with the same keys the real pipeline uses.
+
+test_slice_data_trims_arrays_and_preserves_scalars():
+  Slices [2:5] of a 10-frame dict. Each numpy array should have length 3
+  and each scalar (fps, fixed_scale) should be untouched. Guards that the
+  helper walks the dict correctly and only slices ndarrays.
+
+test_slice_data_end_none_slices_to_end():
+  Passing end=None should behave like array[start:], producing a 4-frame
+  slice from a 7-frame input starting at 3.
+
+test_apply_offset_positive_trims_teacher():
+  Offset +3 → teacher should lose its first 3 frames, both should end up
+  7 frames long, and the first teacher landmark should now be what was
+  originally at index 3.
+
+test_apply_offset_negative_trims_student():
+  Offset -2 → student loses its first 2 frames. Uses a data offset of
+  1000.0 on the student values to verify the correct frames remain.
+
+test_apply_offset_zero_length_matches():
+  Offset 0 but teacher has 12 frames and student has 8. Both should be
+  truncated to the shorter length (8). Guards the min_len truncation.
+
+TestLoadSessionData class:
+  A pytest-style class so setup_method can create a fresh temp dir with
+  real HDF5 files on disk.
+
+  setup_method():
+    Creates tmpdir, writes teacher_data.h5 with 'raw' (landmarks) and
+    'trajectory' datasets plus fps / fixed_scale attrs, and teacher_masks.h5
+    with a 'masks' dataset. This mirrors the real extraction output.
+
+  teardown_method():
+    Removes the temp dir with ignore_errors=True so leftover file locks
+    on Windows do not fail the test.
+
+  test_load_session_data_reads_all_fields():
+    Calls _load_session_data, then checks shapes and attribute values
+    against the values written in setup. Catches any future breakage of
+    the HDF5 read contract.
+
+
+================================================================================
+test_frame_processor.py — FrameProcessor
+================================================================================
+
+Unit tests for the per-frame normalization pipeline used during extraction.
+FakeLandmark is a minimal stand-in for mediapipe's NormalizedLandmark
+(.x, .y, .z, .visibility attributes). _make_fake_landmarks fills a 33-entry
+list in a stick-figure layout.
+
+test_get_hip_center_averages_hip_landmarks():
+  Places landmark 23 at (0.4, 0.6) and 24 at (0.6, 0.6), video is 100x200.
+  Expected hip center: ((40+60)/2, (120+120)/2) = (50, 120). Asserts the
+  returned array matches.
+
+test_get_torso_length_distance():
+  Places the four torso landmarks (11, 12, 23, 24) so the mid-shoulder is
+  at (50, 30) and the mid-hip is at (50, 60) in pixel space. Distance is
+  exactly 30.0. Asserts abs(length - 30.0) < 1e-5.
+
+test_calibrate_if_needed_sets_scale_once():
+  Calls _calibrate_if_needed twice with different landmark positions. The
+  first call must compute the fixed_scale; the second call must return
+  early without touching it. Asserts scale == target_torso_px / torso_len
+  and that it does not change on the second call.
+
+test_build_affine_matrix_shape_and_translation():
+  Manually sets _fixed_scale = 2.0 and calls _build_affine((50, 40)).
+  Expected matrix:
+      [[2, 0, 128 - 100],
+       [0, 2, 128 - 80]]
+  Asserts shape, diagonal scale, and both translation components.
+
+test_process_frame_end_to_end():
+  Drives process_frame with a full synthetic frame (33 fake landmarks,
+  a 480x640 all-ones mask, timestamp 0). Then calls it again at 16 ms
+  with the same input. Checks:
+    - Output landmarks shape (33, 4) and dtype float32
+    - Normalized mask shape equals config.target_mask_size and dtype uint8
+    - trajectory is a 2-element list
+    - fixed_scale is no longer None (calibration ran)
+    - Second-frame filtered landmarks are still close to first-frame values,
+      confirming the One Euro Filter state carried over.
+
+
+================================================================================
+test_config.py — Config dataclasses
+================================================================================
+
+Verifies that every config class is frozen, instantiates with the expected
+defaults, and — for ExtractionConfig — can build a MediaPipe options object.
+Uses pytest.raises(Exception) for the frozen checks because dataclasses
+raise FrozenInstanceError but importing that type would couple the test to
+an internal module.
+
+test_comparison_config_defaults_and_frozen():
+  - Asserts weight_skeleton + weight_trajectory + weight_mask == 1.0.
+  - Asserts weight_angles + weight_cog == 1.0.
+  - Checks that joint_tolerances contains 'left_elbow' and that joint_angles
+    has the same length as joint_tolerances (one tolerance per angle).
+  - Tries to mutate weight_skeleton and expects an exception.
+
+test_comparison_config_singleton_is_equal_instance():
+  Asserts DEFAULT_COMPARISON_CONFIG == ComparisonConfig(). Guards against
+  anyone accidentally changing a field default without updating the
+  default instance.
+
+test_extraction_config_defaults_and_options():
+  Checks target_mask_size and norm_center, then calls
+  create_landmarker_options() and asserts the returned object is not None.
+  This also imports mediapipe transitively as a smoke test.
+
+test_feedback_config_thresholds():
+  Asserts joint_warn_threshold < praise_threshold (the warning zone must
+  end before the praise zone) and energy_low_threshold < 1.0 < energy_high
+  _threshold (the "just right" band contains 1.0). Also confirms the
+  singleton equality and the frozen guard.
+
+test_preprocessor_config_defaults():
+  Checks audio_sample_rate > 0, min_active_duration >= 1, and
+  0 < motion_threshold_ratio < 1. Confirms singleton equality and frozen
+  guard.
+
+
+================================================================================
+test_comparator.py — Comparator pipeline
+================================================================================
+
+Drives the full compare_dances pipeline with synthetic data. EXPECTED_KEYS
+at the top lists every key the result dict must contain so every test can
+cross-check the contract. _make_dataset bundles landmarks, masks, trajectory
+and fps into a dict in the same shape the real Preprocessor returns.
+
+test_compare_returns_all_expected_keys():
+  Runs compare_dances on two identical synthetic datasets and asserts
+  every key in EXPECTED_KEYS is present. Guards the output contract.
+
+test_compare_identical_near_perfect_score():
+  Same input twice — the result should be ≥ 95 overall, ≥ 99 skeleton,
+  and ≥ 99 trajectory. (Mask is slightly lower because optical flow on
+  identical masks produces tiny numerical noise.)
+
+test_compare_distorted_student_drops_skeleton_score():
+  Distorts the student's left elbow and wrist by 0.20 in both axes.
+  The left-elbow angle changes, so skeleton_score should drop below 95.
+
+test_compare_mirrored_trajectory_drops_trajectory_score():
+  Replaces the student trajectory with a mirrored-velocity path. The
+  trajectory_score should fall below 30 and direction_similarity below 0.2.
+
+test_compare_preserves_fps_metadata():
+  Sets teacher fps=24 and student fps=48 and asserts the result dict
+  reports the same values. Catches any future mix-up in the fps
+  propagation.
+
+
+================================================================================
+test_feedback.py — TextFeedback (pre-existing)
+================================================================================
+
+Already existed before this work — covers the rule-based message generator.
+_make_results builds a baseline results dict with perfect scores and all
+required fields, then each test applies specific overrides to exercise
+one scenario.
+
+test_excellent_performance():
+  All scores at 95. Expects the summary to contain "Excellent" and every
+  component to produce its praise message.
+
+test_poor_joint():
+  Sets left_elbow to 40 with all other joints at 85+. Expects a feedback
+  line mentioning "left elbow" (case-insensitive after the recent fix)
+  and no mention of "left knee".
+
+test_trajectory_warning():
+  trajectory_score = 50 → expects a message containing "Trajectory".
+
+test_energy_too_low():
+  Student energy is ~0.3x teacher energy → expects a "less energetic"
+  warning.
+
+test_energy_too_high():
+  Student energy is ~3x teacher energy → expects an "exaggerated" warning.
+
+test_worst_moment():
+  Injects a worst-frame of (42, 35.2). Expects the output to contain
+  "biggest deviation" with "35.2%" and to format the frame as seconds,
+  not a raw frame number.
+
+
+================================================================================
+test_video_feedback.py — VideoFeedback.render_video (pre-existing)
+================================================================================
+
+Already existed before this work — covers the side-by-side skeleton
+feedback video renderer. _create_synthetic_video writes a short solid-color
+mp4 via cv2.VideoWriter; _create_synthetic_h5 writes fake landmark / mask
+HDF5 files with random poses clamped to [0.1, 0.9] and visibility 0.9.
+
+TestVideoFeedback class:
+  - setup_method: Creates a temp dir, two solid-color videos, and matching
+    HDF5 files for teacher and student.
+  - teardown_method: Removes the temp dir.
+
+  test_output_file_created(): Runs render_video and asserts the returned
+  path points to an existing .mp4 file.
+
+  test_output_is_side_by_side(): Opens the output video with cv2.VideoCapture
+  and asserts the frame width is 640 — the sum of the two 320-px inputs,
+  confirming the side-by-side layout.
+
+
+================================================================================
+test_feedback_generator.py — FeedbackGenerator orchestrator
+================================================================================
+
+Drives FeedbackGenerator.generate_feedback end-to-end against real
+synthetic mp4 videos and HDF5 data. _make_synthetic_results builds a
+comparison-results dict with plausible values across the "good but not
+perfect" band so the rule-based feedback generator emits a mix of
+warnings and praise.
+
+TestFeedbackGenerator class:
+  - setup_method: Creates a temp dir, two solid-color mp4s (via the same
+    cv2.VideoWriter pattern as test_video_feedback), and HDF5 landmark/mask
+    files for both roles.
+  - teardown_method: Removes the temp dir.
+
+  _create_video / _create_h5: Private helpers that write one video or one
+  HDF5 pair. Kept as methods instead of module-level functions so they can
+  use self.tmpdir and self.num_frames.
+
+  test_returns_expected_keys():
+    Runs the orchestrator and asserts the result dict has exactly the keys
+    {'feedback', 'timeline_markers', 'feedback_video'}, that feedback is a
+    non-empty list, and that timeline_markers is a list.
+
+  test_feedback_video_file_exists():
+    Asserts the feedback_video filename in the result corresponds to a real
+    file on disk inside tmpdir and has an .mp4 extension.
+
+  test_uses_default_config_when_none():
+    Passes config=None and expects the orchestrator to fall back to
+    DEFAULT_FEEDBACK_CONFIG. Guards the default-handling branch.
+
+
+================================================================================
+test_video_processor.py — VideoProcessor orchestrator smoke test
+================================================================================
+
+Full integration test for the async VideoProcessor.process_videos pipeline.
+The real pipeline would start by running the MediaPipe extractor on every
+frame of the input videos and extracting audio from the files through
+moviepy — both are too heavy and too flaky for a unit test on synthetic
+input. Instead, the test swaps two dependencies with lightweight fakes:
+
+  - Extractor.data_extraction is replaced with fake_extract, which writes
+    synthetic HDF5 files (stick-figure landmarks with a small per-frame
+    drift, a linear trajectory, and circular masks) directly into the
+    output dir as if extraction had just finished.
+  - AudioSync.compute_audio_offset is replaced with fake_offset, which
+    returns 0 so no audio extraction ever happens.
+
+Everything downstream of these two calls — Preprocessor, Comparator,
+FeedbackGenerator, and VideoFeedback.render_video — runs for real.
+
+Module-level helpers:
+  - _create_video: Writes a short solid-color mp4 at 30 fps.
+  - _write_synthetic_hdf5: Builds landmark / trajectory / mask data with
+    make_stick_figure_landmarks + make_trajectory + make_masks and saves
+    it to two HDF5 files (label_data.h5 and label_masks.h5). A small
+    per-frame drift is added to the landmarks so MotionEnergy actually
+    detects an active region instead of returning the fallback.
+
+TestVideoProcessor class:
+  - setup_method:
+      1. Creates tmpdir and two solid-color mp4 videos.
+      2. Defines fake_extract (closes over num_frames) and fake_offset.
+      3. Stores the original Extractor.data_extraction and
+         AudioSync.compute_audio_offset as instance attrs so they can be
+         restored in teardown.
+      4. Installs the fakes as staticmethods on the real classes. Using
+         staticmethod is important because the originals are declared with
+         @staticmethod, and replacing a staticmethod with a plain function
+         would change the binding behaviour.
+  - teardown_method:
+      Restores the two originals and removes tmpdir.
+
+  test_smoke_returns_full_result_dict():
+    Runs the async pipeline via asyncio.run and asserts the returned dict
+    contains all the keys the rest of the system expects
+    (overall_score, skeleton_score, trajectory_score, mask_score,
+    feedback, timeline_markers, feedback_video). Also checks that the
+    feedback video file really exists on disk. This is the most important
+    test in the entire suite — it proves the full pipeline wires up
+    correctly.
+
+  test_missing_video_returns_none():
+    Passes a non-existent teacher path. process_videos has an explicit
+    check at the top that sends an error status and returns None. Asserts
+    the return value is None.
+
+  test_event_handler_receives_status_updates():
+    Passes an async handler that appends every status message to a list,
+    runs the pipeline, and asserts the list is non-empty and contains at
+    least one "Processing" message. Guards the SSE status-callback path.
+
+
+================================================================================
+How the tests are organised and run
+================================================================================
+
+Discovery:
+  pytest collects everything in tests/ matching test_*.py. Each test file
+  begins with the same two-line prelude that makes the helper importable:
+
+      sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+      import config_for_tests
+
+  After that, all `from model...` imports work.
+
+Style:
+  - Pure functions for simple tests, pytest-style classes with
+    setup_method / teardown_method where a temp directory or monkey-patch
+    must be torn down.
+  - Every test function has a one-line docstring and prints a short
+    header plus a "PASSED" line so running a single file directly
+    (python tests/test_foo.py) produces readable output.
+  - Synthetic data only — no committed video or HDF5 fixtures.
+  - Coverage is measured with `coverage run --source=model -m pytest tests/`
+    and currently sits at 85% for the model/ package. The uncovered
+    lines are concentrated in extractor.py, visualization.py, and
+    audio_sync.py — all of which are intentionally skipped because they
+    require real videos, a display, or moviepy file I/O.
