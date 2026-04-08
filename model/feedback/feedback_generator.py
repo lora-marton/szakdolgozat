@@ -4,6 +4,7 @@ Feedback orchestrator.
 Coordinates text feedback generation, timeline marker extraction,
 and feedback video rendering into a single entry point.
 """
+
 import os
 
 from model.config import DEFAULT_FEEDBACK_CONFIG
@@ -44,12 +45,14 @@ class FeedbackGenerator:
         feedback = TextFeedback.generate_messages(results, config)
         timeline_markers = TextFeedback.extract_timeline_markers(results, config)
         video_path = VideoFeedback.render_video(
-            teacher_video, student_video, output_dir,
-            results.get('preprocess_info'),
+            teacher_video,
+            student_video,
+            output_dir,
+            results.get("preprocess_info"),
         )
 
         return {
-            'feedback': feedback,
-            'timeline_markers': timeline_markers,
-            'feedback_video': os.path.basename(video_path),
+            "feedback": feedback,
+            "timeline_markers": timeline_markers,
+            "feedback_video": os.path.basename(video_path),
         }

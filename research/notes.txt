@@ -36,7 +36,10 @@ session starter: .\venv\Scripts\activate
 
 dependencies: pip install -r requirements.txt
 
-run: python -m controller.routes or uvicorn controller.routes:app
+run: powershell -ExecutionPolicy Bypass -File .\start.ps1 (or just .\start.ps1)
+(python -m controller.routes or uvicorn controller.routes:app)
+
+run tests: python -m pytest tests/
 
 
 

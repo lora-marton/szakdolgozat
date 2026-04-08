@@ -4,6 +4,7 @@ Dynamic Time Warping for temporal alignment of dance sequences.
 Aligns student frames to teacher frames using skeleton data,
 producing a mapping that other metrics use for frame-to-frame comparison.
 """
+
 import numpy as np
 from dtw import dtw
 
@@ -41,9 +42,9 @@ class DTW:
         alignment = dtw(
             student_flat,
             teacher_flat,
-            step_pattern='symmetric2',
-            window_type='sakoechiba',
-            window_args={'window_size': window_size},
+            step_pattern="symmetric2",
+            window_type="sakoechiba",
+            window_args={"window_size": window_size},
             keep_internals=False,
         )
 

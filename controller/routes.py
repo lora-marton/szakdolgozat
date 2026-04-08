@@ -1,30 +1,31 @@
 """
 FastAPI application with all API endpoints.
 
-Provides endpoints for video upload and processing, 
+Provides endpoints for video upload and processing,
 feedback retrieval, video streaming, and session listing.
 """
+
 import asyncio
 import os
 import shutil
 import sys
+from contextlib import asynccontextmanager
 from datetime import datetime
 
-from contextlib import asynccontextmanager
+import uvicorn
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-import uvicorn
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(CURRENT_DIR)
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-from controller.services import SessionService, DATA_DIR
+from controller.services import DATA_DIR, SessionService
 from model.video_processor import VideoProcessor
 
-UPLOAD_FOLDER = os.path.join(ROOT_DIR, 'uploaded_videos')
+UPLOAD_FOLDER = os.path.join(ROOT_DIR, "uploaded_videos")
 
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
@@ -41,6 +42,7 @@ async def lifespan(app: FastAPI):
     """
     if sys.platform == "win32":
         import signal
+
         signal.signal(signal.SIGINT, signal.SIG_DFL)
 
         loop = asyncio.get_running_loop()
@@ -97,7 +99,9 @@ async def upload_files(
         output_dir = os.path.join(DATA_DIR, session_id)
 
         results = await VideoProcessor.process_videos(
-            teacher_path, student_path, output_dir,
+            teacher_path,
+            student_path,
+            output_dir,
             event_handler=sse_status_handler,
         )
 
@@ -160,25 +164,23 @@ async def get_feedback(
             detail=f"No results found for session '{session_id}'.",
         )
 
-    video_file = os.path.join(DATA_DIR, session_id, 'feedback_video.mp4')
-    video_url = (
-        f"/feedback/video?session_id={session_id}"
-        if os.path.isfile(video_file)
-        else None
-    )
+    video_file = os.path.join(DATA_DIR, session_id, "feedback_video.mp4")
+    video_url = f"/feedback/video?session_id={session_id}" if os.path.isfile(video_file) else None
 
-    return JSONResponse(content={
-        "session_id": session_id,
-        "overall_score": results.get("overall_score"),
-        "skeleton_score": results.get("skeleton_score"),
-        "trajectory_score": results.get("trajectory_score"),
-        "mask_score": results.get("mask_score"),
-        "timing_cost": results.get("timing_cost"),
-        "per_joint_scores": results.get("per_joint_scores"),
-        "feedback": results.get("feedback", []),
-        "timeline_markers": results.get("timeline_markers", []),
-        "feedback_video_url": video_url,
-    })
+    return JSONResponse(
+        content={
+            "session_id": session_id,
+            "overall_score": results.get("overall_score"),
+            "skeleton_score": results.get("skeleton_score"),
+            "trajectory_score": results.get("trajectory_score"),
+            "mask_score": results.get("mask_score"),
+            "timing_cost": results.get("timing_cost"),
+            "per_joint_scores": results.get("per_joint_scores"),
+            "feedback": results.get("feedback", []),
+            "timeline_markers": results.get("timeline_markers", []),
+            "feedback_video_url": video_url,
+        }
+    )
 
 
 @app.get("/feedback/detailed")
@@ -201,10 +203,12 @@ async def get_detailed_feedback(
             detail=f"No results found for session '{session_id}'.",
         )
 
-    return JSONResponse(content={
-        "session_id": session_id,
-        **results,
-    })
+    return JSONResponse(
+        content={
+            "session_id": session_id,
+            **results,
+        }
+    )
 
 
 @app.get("/feedback/video")
@@ -221,7 +225,7 @@ async def get_feedback_video(
         if session_id is None:
             raise HTTPException(status_code=404, detail="No sessions found.")
 
-    video_path = os.path.join(DATA_DIR, session_id, 'feedback_video.mp4')
+    video_path = os.path.join(DATA_DIR, session_id, "feedback_video.mp4")
     if not os.path.isfile(video_path):
         raise HTTPException(
             status_code=404,
@@ -230,8 +234,8 @@ async def get_feedback_video(
 
     return FileResponse(
         video_path,
-        media_type='video/mp4',
-        filename='feedback_video.mp4',
+        media_type="video/mp4",
+        filename="feedback_video.mp4",
     )
 
 
@@ -242,8 +246,7 @@ async def list_sessions() -> JSONResponse:
         return JSONResponse(content={"sessions": []})
 
     sessions = sorted(
-        [d for d in os.listdir(DATA_DIR)
-         if os.path.isdir(os.path.join(DATA_DIR, d))],
+        [d for d in os.listdir(DATA_DIR) if os.path.isdir(os.path.join(DATA_DIR, d))],
         reverse=True,
     )
     return JSONResponse(content={"sessions": sessions})

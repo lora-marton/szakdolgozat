@@ -5,6 +5,7 @@ Opens a video file, runs MediaPipe pose detection on each frame,
 delegates per-frame processing to FrameProcessor, and saves the
 results as HDF5 files.
 """
+
 import os
 
 import cv2
@@ -24,8 +25,8 @@ class Extractor:
     @staticmethod
     def data_extraction(
         video_path: str,
-        output_dir: str = 'data',
-        label: str = 'dance',
+        output_dir: str = "data",
+        label: str = "dance",
         debug: bool = False,
         status_callback: object | None = None,
         config: ExtractionConfig | None = None,
@@ -78,9 +79,14 @@ class Extractor:
                     status_callback(f"Processing frame {int(frame_idx)}...")
 
                 result = Extractor._detect_pose(frame, landmarker, timestamp_ms)
-                
+
                 landmarks, norm_mask, trajectory = Extractor._extract_frame_data(
-                    result, processor, vid_w, vid_h, timestamp_ms, config,
+                    result,
+                    processor,
+                    vid_w,
+                    vid_h,
+                    timestamp_ms,
+                    config,
                 )
 
                 if debug and result.pose_landmarks:
@@ -90,7 +96,7 @@ class Extractor:
                 collected_masks.append(norm_mask)
                 collected_trajectory.append(trajectory)
 
-                if debug and cv2.waitKey(1) & 0xFF == ord('q'):
+                if debug and cv2.waitKey(1) & 0xFF == ord("q"):
                     break
 
             cap.release()
@@ -98,8 +104,13 @@ class Extractor:
                 cv2.destroyAllWindows()
 
         Extractor._save_data(
-            output_dir, label, collected_raw, collected_masks,
-            collected_trajectory, config.target_fps, processor.fixed_scale,
+            output_dir,
+            label,
+            collected_raw,
+            collected_masks,
+            collected_trajectory,
+            config.target_fps,
+            processor.fixed_scale,
         )
 
     @staticmethod
@@ -185,8 +196,8 @@ class Extractor:
         segmentation_mask = result.segmentation_masks[0].numpy_view()
         overlay = Visualization.draw_mask_overlay(frame, segmentation_mask)
         overlay = Visualization.draw_skeleton(overlay, landmarks, config.pose_connections, vid_w, vid_h)
-        cv2.imshow('Main View (Skeleton + Mask)', overlay)
-        cv2.imshow('Follow-Cam View (Centered)', norm_mask)
+        cv2.imshow("Main View (Skeleton + Mask)", overlay)
+        cv2.imshow("Follow-Cam View (Centered)", norm_mask)
 
     @staticmethod
     def _save_data(
@@ -210,22 +221,22 @@ class Extractor:
             target_fps: Frame rate used during extraction.
             fixed_scale: Scale factor from calibration (1.0 if not calibrated).
         """
-        output_path = os.path.join(output_dir, f'{label}_data.h5')
-        output_mask_path = os.path.join(output_dir, f'{label}_masks.h5')
+        output_path = os.path.join(output_dir, f"{label}_data.h5")
+        output_mask_path = os.path.join(output_dir, f"{label}_masks.h5")
 
         print(f"Saving {len(collected_raw)} frames...")
 
-        with h5py.File(output_path, 'w') as f:
-            f.create_dataset('raw', data=np.array(collected_raw, dtype=np.float32))
-            dset_traj = f.create_dataset('trajectory', data=np.array(collected_trajectory, dtype=np.float32))
-            dset_traj.attrs['description'] = 'Hip Center (x, y) in original pixels'
-            f.attrs['fps'] = target_fps
-            f.attrs['fixed_scale'] = fixed_scale if fixed_scale is not None else 1.0
+        with h5py.File(output_path, "w") as f:
+            f.create_dataset("raw", data=np.array(collected_raw, dtype=np.float32))
+            dset_traj = f.create_dataset("trajectory", data=np.array(collected_trajectory, dtype=np.float32))
+            dset_traj.attrs["description"] = "Hip Center (x, y) in original pixels"
+            f.attrs["fps"] = target_fps
+            f.attrs["fixed_scale"] = fixed_scale if fixed_scale is not None else 1.0
 
         print(f"Saving masks to {output_mask_path} (gzip)...")
-        with h5py.File(output_mask_path, 'w') as f:
+        with h5py.File(output_mask_path, "w") as f:
             f.create_dataset(
-                'masks',
+                "masks",
                 data=np.array(collected_masks, dtype=np.uint8),
                 compression="gzip",
                 compression_opts=4,

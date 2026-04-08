@@ -5,13 +5,13 @@ Handles result persistence, session discovery, result loading,
 and SSE event generation. All methods are stateless — state
 (like the SSE queue) is passed in by the caller.
 """
+
 import json
 import os
 
 import numpy as np
 
-
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 
 
 class SessionService:
@@ -30,8 +30,7 @@ class SessionService:
         if not os.path.isdir(DATA_DIR):
             return None
         sessions = sorted(
-            [d for d in os.listdir(DATA_DIR)
-             if os.path.isdir(os.path.join(DATA_DIR, d))],
+            [d for d in os.listdir(DATA_DIR) if os.path.isdir(os.path.join(DATA_DIR, d))],
             reverse=True,
         )
         return sessions[0] if sessions else None
@@ -46,10 +45,10 @@ class SessionService:
         Returns:
             Parsed dict from results.json, or None if the file does not exist.
         """
-        results_path = os.path.join(DATA_DIR, session_id, 'results.json')
+        results_path = os.path.join(DATA_DIR, session_id, "results.json")
         if not os.path.isfile(results_path):
             return None
-        with open(results_path, 'r', encoding='utf-8') as f:
+        with open(results_path, "r", encoding="utf-8") as f:
             return json.load(f)
 
     @staticmethod
@@ -72,13 +71,10 @@ class SessionService:
             if isinstance(value, np.ndarray):
                 serializable[key] = value.tolist()
             elif isinstance(value, dict):
-                serializable[key] = {
-                    k: v.tolist() if isinstance(v, np.ndarray) else v
-                    for k, v in value.items()
-                }
+                serializable[key] = {k: v.tolist() if isinstance(v, np.ndarray) else v for k, v in value.items()}
             else:
                 serializable[key] = value
 
-        results_path = os.path.join(session_dir, 'results.json')
-        with open(results_path, 'w', encoding='utf-8') as f:
+        results_path = os.path.join(session_dir, "results.json")
+        with open(results_path, "w", encoding="utf-8") as f:
             json.dump(serializable, f, indent=2)

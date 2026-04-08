@@ -6,6 +6,7 @@ movements. Based on the algorithm by Casiez, Roussel, and Vogel (CHI 2012).
 
 Reference: https://gery.casiez.net/1euro/
 """
+
 import numpy as np
 
 

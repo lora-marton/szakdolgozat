@@ -4,6 +4,7 @@ Extraction configuration.
 All constants for pose extraction: model path, target FPS,
 normalization, detection confidence, filtering, and skeleton connections.
 """
+
 from dataclasses import dataclass
 
 import mediapipe as mp
@@ -13,7 +14,7 @@ import mediapipe as mp
 class ExtractionConfig:
     """All configuration constants for pose extraction."""
 
-    model_path: str = 'model/pose_landmarker_heavy.task'
+    model_path: str = "model/pose_landmarker_heavy.task"
 
     target_fps: float = 60.0
     output_fps: float = 30.0
@@ -30,9 +31,18 @@ class ExtractionConfig:
     filter_beta: float = 20.0
 
     pose_connections: tuple = (
-        (11, 12), (11, 13), (13, 15), (12, 14), (14, 16),
-        (11, 23), (12, 24), (23, 24),
-        (23, 25), (25, 27), (24, 26), (26, 28),
+        (11, 12),
+        (11, 13),
+        (13, 15),
+        (12, 14),
+        (14, 16),
+        (11, 23),
+        (12, 24),
+        (23, 24),
+        (23, 25),
+        (25, 27),
+        (24, 26),
+        (26, 28),
     )
 
     def create_landmarker_options(self) -> mp.tasks.vision.PoseLandmarkerOptions:

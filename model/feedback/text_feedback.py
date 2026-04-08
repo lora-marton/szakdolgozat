@@ -1,19 +1,19 @@
 """
 Rule-based text feedback generation for dance comparison results.
 """
+
 import numpy as np
 
 from model.config import DEFAULT_EXTRACTION_CONFIG
 from model.config.feedback_config import FeedbackConfig
 
-
 _JOINT_TIPS = {
-    'elbow':    'Focus on matching the bend of your elbows — keep them sharper or softer as needed.',
-    'knee':     'Pay attention to your knee bend — try to match the depth of the teacher\'s plié or stance.',
-    'shoulder': 'Watch your shoulder positioning — they may be too raised or too low.',
-    'hip':      'Your hip angles are off — focus on the tilt and rotation of your pelvis.',
-    'wrist':    'Your wrist angles differ — check if your hands are angled differently from the teacher.',
-    'ankle':    'Your ankle positioning differs — pay attention to foot placement and flexion.',
+    "elbow": "Focus on matching the bend of your elbows — keep them sharper or softer as needed.",
+    "knee": "Pay attention to your knee bend — try to match the depth of the teacher's plié or stance.",
+    "shoulder": "Watch your shoulder positioning — they may be too raised or too low.",
+    "hip": "Your hip angles are off — focus on the tilt and rotation of your pelvis.",
+    "wrist": "Your wrist angles differ — check if your hands are angled differently from the teacher.",
+    "ankle": "Your ankle positioning differs — pay attention to foot placement and flexion.",
 }
 
 
@@ -33,19 +33,19 @@ class TextFeedback:
         """
         feedback = []
 
-        overall = results['overall_score']
-        skeleton = results['skeleton_score']
-        trajectory = results['trajectory_score']
-        mask = results['mask_score']
+        overall = results["overall_score"]
+        skeleton = results["skeleton_score"]
+        trajectory = results["trajectory_score"]
+        mask = results["mask_score"]
 
         feedback.append(TextFeedback._overall_summary(overall))
 
-        worst_frames = results.get('worst_frames', [])
+        worst_frames = results.get("worst_frames", [])
         worst_msg = TextFeedback._worst_moment(worst_frames, results)
         if worst_msg:
             feedback.append(worst_msg)
 
-        per_joint = results.get('per_joint_scores', {})
+        per_joint = results.get("per_joint_scores", {})
         joint_warnings = TextFeedback._joint_warnings(per_joint, config.joint_warn_threshold)
         feedback.extend(joint_warnings)
 
@@ -57,12 +57,12 @@ class TextFeedback:
         if shape_msg:
             feedback.append(shape_msg)
 
-        energy_details = results.get('energy_details', {})
+        energy_details = results.get("energy_details", {})
         energy_msg = TextFeedback._energy_mismatch(energy_details, config)
         if energy_msg:
             feedback.append(energy_msg)
 
-        timing_cost = results.get('timing_cost')
+        timing_cost = results.get("timing_cost")
         timing_msg = TextFeedback._timing_warning(timing_cost, config)
         if timing_msg:
             feedback.append(timing_msg)
@@ -88,41 +88,44 @@ class TextFeedback:
         Returns:
             List of dicts with 'time' (seconds) and 'label' (score string).
         """
-        worst_frames = results.get('worst_frames', [])
+        worst_frames = results.get("worst_frames", [])
         if not worst_frames:
             return []
 
-        alignment = results.get('alignment_path', [])
-        preprocess_info = results.get('preprocess_info', {})
-        audio_offset = preprocess_info.get('audio_offset', 0)
-        student_offset = preprocess_info.get('student_offset', 0)
+        alignment = results.get("alignment_path", [])
+        preprocess_info = results.get("preprocess_info", {})
+        audio_offset = preprocess_info.get("audio_offset", 0)
+        student_offset = preprocess_info.get("student_offset", 0)
 
-        teacher_fps = results.get('teacher_fps', 30.0)
-        student_fps = results.get('student_fps', 30.0)
+        teacher_fps = results.get("teacher_fps", 30.0)
+        student_fps = results.get("student_fps", 30.0)
         source_fps = min(teacher_fps, student_fps)
 
         markers = []
 
         for dtw_idx, frame_score in worst_frames:
             time_sec = TextFeedback._frame_to_seconds(
-                dtw_idx, alignment, audio_offset, student_offset, source_fps,
+                dtw_idx,
+                alignment,
+                audio_offset,
+                student_offset,
+                source_fps,
             )
             if time_sec is None:
                 continue
 
             time_rounded = round(time_sec, 2)
 
-            too_close = any(
-                abs(time_rounded - m['time']) < config.min_marker_gap
-                for m in markers
-            )
+            too_close = any(abs(time_rounded - m["time"]) < config.min_marker_gap for m in markers)
             if too_close:
                 continue
 
-            markers.append({
-                'time': time_rounded,
-                'label': f"{frame_score}%",
-            })
+            markers.append(
+                {
+                    "time": time_rounded,
+                    "label": f"{frame_score}%",
+                }
+            )
 
             if len(markers) >= 5:
                 break
@@ -192,24 +195,25 @@ class TextFeedback:
 
         dtw_idx, frame_score = worst_frames[0]
 
-        alignment = results.get('alignment_path', [])
-        preprocess_info = results.get('preprocess_info', {})
-        audio_offset = preprocess_info.get('audio_offset', 0)
-        student_offset = preprocess_info.get('student_offset', 0)
+        alignment = results.get("alignment_path", [])
+        preprocess_info = results.get("preprocess_info", {})
+        audio_offset = preprocess_info.get("audio_offset", 0)
+        student_offset = preprocess_info.get("student_offset", 0)
 
-        teacher_fps = results.get('teacher_fps', 30.0)
-        student_fps = results.get('student_fps', 30.0)
+        teacher_fps = results.get("teacher_fps", 30.0)
+        student_fps = results.get("student_fps", 30.0)
         source_fps = min(teacher_fps, student_fps)
 
         time_sec = TextFeedback._frame_to_seconds(
-            dtw_idx, alignment, audio_offset, student_offset, source_fps,
+            dtw_idx,
+            alignment,
+            audio_offset,
+            student_offset,
+            source_fps,
         )
 
         if time_sec is not None:
-            return (
-                f"⚠ Your biggest deviation was at {time_sec:.1f}s "
-                f"(score: {frame_score}%)."
-            )
+            return f"⚠ Your biggest deviation was at {time_sec:.1f}s " f"(score: {frame_score}%)."
 
         return f"⚠ Your biggest deviation scored {frame_score}%."
 
@@ -220,10 +224,10 @@ class TextFeedback:
         for joint, score in per_joint_scores.items():
             if score >= threshold:
                 continue
-            if joint.startswith('left_'):
-                side, base = 'left', joint[5:]
-            elif joint.startswith('right_'):
-                side, base = 'right', joint[6:]
+            if joint.startswith("left_"):
+                side, base = "left", joint[5:]
+            elif joint.startswith("right_"):
+                side, base = "right", joint[6:]
             else:
                 side, base = None, joint
             groups.setdefault(base, {})[side] = score
@@ -235,12 +239,12 @@ class TextFeedback:
                 if key in base:
                     tip = msg
                     break
-            formatted_base = base.replace('_', ' ')
+            formatted_base = base.replace("_", " ")
             if tip is None:
-                tip = f'Your {formatted_base} positioning needs improvement.'
+                tip = f"Your {formatted_base} positioning needs improvement."
 
-            if 'left' in sides and 'right' in sides:
-                name = formatted_base + 's'
+            if "left" in sides and "right" in sides:
+                name = formatted_base + "s"
                 label = f"{sides['left']}% (left) / {sides['right']}% (right)"
             else:
                 side, score = next(iter(sides.items()))
@@ -277,8 +281,8 @@ class TextFeedback:
     @staticmethod
     def _energy_mismatch(energy_details: dict, config: FeedbackConfig) -> str | None:
         """Detect if the student is consistently too slow or too fast."""
-        teacher_energy = energy_details.get('teacher_energy')
-        student_energy = energy_details.get('student_energy')
+        teacher_energy = energy_details.get("teacher_energy")
+        student_energy = energy_details.get("student_energy")
 
         if teacher_energy is None or student_energy is None:
             return None
@@ -309,10 +313,7 @@ class TextFeedback:
         if timing_cost is None:
             return None
         if timing_cost >= config.timing_warn_threshold:
-            return (
-                "⚠ Your timing seems off — "
-                "try to stay in sync with the teacher's rhythm."
-            )
+            return "⚠ Your timing seems off — " "try to stay in sync with the teacher's rhythm."
         if timing_cost <= config.timing_praise_threshold:
             return "✓ Great timing — you stayed well in sync with the teacher!"
         return None
@@ -337,4 +338,4 @@ class TextFeedback:
     @staticmethod
     def _format_joint(name: str) -> str:
         """Format a joint name for display: 'right_elbow' -> 'Right Elbow'."""
-        return name.replace('_', ' ')
+        return name.replace("_", " ")

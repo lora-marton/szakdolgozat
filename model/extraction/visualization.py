@@ -4,6 +4,7 @@ Debug visualization helpers for the extraction pipeline.
 Draws skeleton overlays and segmentation mask previews on video frames.
 Only used when Extractor.data_extraction() is called with debug=True.
 """
+
 import cv2
 import numpy as np
 

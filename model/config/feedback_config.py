@@ -4,6 +4,7 @@ Feedback configuration.
 All thresholds for rule-based feedback generation: warning triggers
 and praise triggers for each scoring component.
 """
+
 from dataclasses import dataclass
 
 

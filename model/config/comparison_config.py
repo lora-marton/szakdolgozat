@@ -4,6 +4,7 @@ Comparison configuration.
 All constants for dance comparison scoring: weights, decay parameters,
 joint definitions, mask settings, and trajectory settings.
 """
+
 from dataclasses import dataclass, field
 
 
@@ -22,12 +23,18 @@ class ComparisonConfig:
     cog_sigma: float = 0.08
 
     dtw_joints: tuple = (
-        11, 12,
-        13, 14,
-        15, 16,
-        23, 24,
-        25, 26,
-        27, 28,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
     )
 
     dtw_window_size: int = 120
@@ -51,40 +58,44 @@ class ComparisonConfig:
         (12, 24, 23),
     )
 
-    joint_tolerances: dict = field(default_factory=lambda: {
-        'left_elbow': 15.0,
-        'right_elbow': 15.0,
-        'left_knee': 15.0,
-        'right_knee': 15.0,
-        'left_shoulder': 10.0,
-        'right_shoulder': 10.0,
-        'left_hip': 10.0,
-        'right_hip': 10.0,
-        'left_wrist': 20.0,
-        'right_wrist': 20.0,
-        'left_ankle': 20.0,
-        'right_ankle': 20.0,
-        'left_inner_shoulder': 10.0,
-        'right_inner_shoulder': 10.0,
-        'left_inner_hip': 10.0,
-        'right_inner_hip': 10.0,
-    })
+    joint_tolerances: dict = field(
+        default_factory=lambda: {
+            "left_elbow": 15.0,
+            "right_elbow": 15.0,
+            "left_knee": 15.0,
+            "right_knee": 15.0,
+            "left_shoulder": 10.0,
+            "right_shoulder": 10.0,
+            "left_hip": 10.0,
+            "right_hip": 10.0,
+            "left_wrist": 20.0,
+            "right_wrist": 20.0,
+            "left_ankle": 20.0,
+            "right_ankle": 20.0,
+            "left_inner_shoulder": 10.0,
+            "right_inner_shoulder": 10.0,
+            "left_inner_hip": 10.0,
+            "right_inner_hip": 10.0,
+        }
+    )
 
-    cog_weights: dict = field(default_factory=lambda: {
-        0: 0.08,
-        11: 0.06,
-        12: 0.06,
-        13: 0.03,
-        14: 0.03,
-        15: 0.02,
-        16: 0.02,
-        23: 0.15,
-        24: 0.15,
-        25: 0.06,
-        26: 0.06,
-        27: 0.02,
-        28: 0.02,
-    })
+    cog_weights: dict = field(
+        default_factory=lambda: {
+            0: 0.08,
+            11: 0.06,
+            12: 0.06,
+            13: 0.03,
+            14: 0.03,
+            15: 0.02,
+            16: 0.02,
+            23: 0.15,
+            24: 0.15,
+            25: 0.06,
+            26: 0.06,
+            27: 0.02,
+            28: 0.02,
+        }
+    )
 
     visibility_threshold: float = 0.5
     mask_binary_threshold: int = 128

@@ -1,6 +1,7 @@
 """
 Trajectory comparison: direction and speed analysis of floor movement.
 """
+
 import numpy as np
 
 
@@ -40,24 +41,27 @@ class TrajectoryMetrics:
         active = (teacher_speed > min_speed_threshold) | (student_speed > min_speed_threshold)
 
         if not active.any():
-            return {'score': 100.0, 'direction_similarity': 1.0}
+            return {"score": 100.0, "direction_similarity": 1.0}
 
         direction_scores = TrajectoryMetrics._direction_similarity(
-            teacher_vel[active], student_vel[active],
-            teacher_speed[active], student_speed[active],
+            teacher_vel[active],
+            student_vel[active],
+            teacher_speed[active],
+            student_speed[active],
         )
         mean_direction = float(direction_scores.mean())
 
         speed_scores = TrajectoryMetrics._speed_similarity(
-            teacher_speed[active], student_speed[active],
+            teacher_speed[active],
+            student_speed[active],
         )
         mean_speed = float(speed_scores.mean())
 
         score = (weight_direction * mean_direction + weight_speed * mean_speed) * 100.0
 
         return {
-            'score': round(score, 1),
-            'direction_similarity': round(mean_direction, 3),
+            "score": round(score, 1),
+            "direction_similarity": round(mean_direction, 3),
         }
 
     @staticmethod

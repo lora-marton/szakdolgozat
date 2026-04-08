@@ -2,6 +2,7 @@
 Mask-based comparison metrics: EFD contour smoothing, DTM shape scoring,
 and optical flow energy analysis.
 """
+
 import cv2
 import numpy as np
 from pyefd import elliptic_fourier_descriptors, reconstruct_contour
@@ -32,7 +33,8 @@ class MaskMetrics:
             and 'energy_details' dict.
         """
         dtm_score, per_frame_shape = MaskMetrics._compare_shapes_dtm(
-            teacher_masks, student_masks,
+            teacher_masks,
+            student_masks,
             sigma=config.dtm_sigma,
             n_harmonics=config.efd_harmonics,
             n_points=config.efd_contour_points,
@@ -40,20 +42,18 @@ class MaskMetrics:
         )
 
         energy_details = MaskMetrics._compare_mask_energy(
-            teacher_masks, student_masks,
+            teacher_masks,
+            student_masks,
             winsize=config.flow_winsize,
             threshold=config.mask_binary_threshold,
         )
 
-        combined = (
-            config.weight_shape * dtm_score
-            + config.weight_energy * energy_details['energy_score']
-        ) * 100.0
+        combined = (config.weight_shape * dtm_score + config.weight_energy * energy_details["energy_score"]) * 100.0
 
         return {
-            'score': round(combined, 1),
-            'per_frame_shape': per_frame_shape,
-            'energy_details': energy_details,
+            "score": round(combined, 1),
+            "per_frame_shape": per_frame_shape,
+            "energy_details": energy_details,
         }
 
     @staticmethod
@@ -137,10 +137,16 @@ class MaskMetrics:
 
         for i in range(n_frames):
             t_smooth = MaskMetrics._smooth_mask_efd(
-                teacher_masks[i], n_harmonics, n_points, threshold,
+                teacher_masks[i],
+                n_harmonics,
+                n_points,
+                threshold,
             )
             s_smooth = MaskMetrics._smooth_mask_efd(
-                student_masks[i], n_harmonics, n_points, threshold,
+                student_masks[i],
+                n_harmonics,
+                n_points,
+                threshold,
             )
 
             t_binary = t_smooth > 0
@@ -188,7 +194,7 @@ class MaskMetrics:
             Mean score of query pixels in the reference score map (0-1).
         """
         outside_dist = distance_transform_edt(~reference_binary)
-        score_map = np.exp(-(outside_dist ** 2) / (2 * sigma ** 2))
+        score_map = np.exp(-(outside_dist**2) / (2 * sigma**2))
         return float(score_map[query_binary].mean())
 
     @staticmethod
@@ -220,10 +226,10 @@ class MaskMetrics:
 
         if n_frames < 2:
             return {
-                'energy_score': 1.0,
-                'per_frame_ratios': np.array([], dtype=np.float32),
-                'teacher_energy': np.array([], dtype=np.float32),
-                'student_energy': np.array([], dtype=np.float32),
+                "energy_score": 1.0,
+                "per_frame_ratios": np.array([], dtype=np.float32),
+                "teacher_energy": np.array([], dtype=np.float32),
+                "student_energy": np.array([], dtype=np.float32),
             }
 
         n_pairs = n_frames - 1
@@ -233,10 +239,16 @@ class MaskMetrics:
 
         for i in range(n_pairs):
             t_energy = MaskMetrics._compute_frame_energy(
-                teacher_masks[i], teacher_masks[i + 1], winsize, threshold,
+                teacher_masks[i],
+                teacher_masks[i + 1],
+                winsize,
+                threshold,
             )
             s_energy = MaskMetrics._compute_frame_energy(
-                student_masks[i], student_masks[i + 1], winsize, threshold,
+                student_masks[i],
+                student_masks[i + 1],
+                winsize,
+                threshold,
             )
 
             teacher_energy[i] = t_energy
@@ -258,10 +270,10 @@ class MaskMetrics:
             energy_score = float(per_frame_ratios[active].mean())
 
         return {
-            'energy_score': round(energy_score, 4),
-            'per_frame_ratios': per_frame_ratios,
-            'teacher_energy': teacher_energy,
-            'student_energy': student_energy,
+            "energy_score": round(energy_score, 4),
+            "per_frame_ratios": per_frame_ratios,
+            "teacher_energy": teacher_energy,
+            "student_energy": student_energy,
         }
 
     @staticmethod
@@ -283,7 +295,8 @@ class MaskMetrics:
             Average flow magnitude inside the mask region.
         """
         flow = cv2.calcOpticalFlowFarneback(
-            mask_prev, mask_curr,
+            mask_prev,
+            mask_curr,
             flow=None,
             pyr_scale=0.5,
             levels=3,

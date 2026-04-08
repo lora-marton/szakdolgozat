@@ -4,6 +4,7 @@ Motion energy detection for finding the active dance range in a sequence.
 Computes per-frame motion energy from pose landmarks and identifies
 the first/last frame of sustained movement, trimming idle periods.
 """
+
 import numpy as np
 
 
@@ -26,7 +27,7 @@ class MotionEnergy:
         """
         positions = landmarks[:, :, :3]
         deltas = np.diff(positions, axis=0)
-        per_joint = np.sqrt((deltas ** 2).sum(axis=-1))
+        per_joint = np.sqrt((deltas**2).sum(axis=-1))
         energy = per_joint.mean(axis=-1)
         return energy
 
@@ -62,14 +63,14 @@ class MotionEnergy:
 
         start = 0
         for i in range(len(active) - min_duration_frames):
-            window = active[i:i + min_duration_frames]
+            window = active[i : i + min_duration_frames]
             if window.sum() >= required_active:
                 start = i
                 break
 
         end = len(energy)
         for i in range(len(active) - 1, min_duration_frames - 1, -1):
-            window = active[i - min_duration_frames + 1:i + 1]
+            window = active[i - min_duration_frames + 1 : i + 1]
             if window.sum() >= required_active:
                 end = i + 1
                 break

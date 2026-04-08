@@ -4,10 +4,11 @@ Video processing pipeline orchestrator.
 Ties together extraction, comparison, feedback generation, and video
 rendering into a single async pipeline with real-time SSE status updates.
 """
+
 import asyncio
 import os
 import traceback
-from typing import Callable, Awaitable
+from typing import Awaitable, Callable
 
 from model.comparison.comparator import Comparator
 from model.extraction.extractor import Extractor
@@ -22,7 +23,7 @@ class VideoProcessor:
     async def process_videos(
         teacher_file: str,
         student_file: str,
-        output_dir: str = 'data',
+        output_dir: str = "data",
         event_handler: Callable[[str], Awaitable[None]] | None = None,
     ) -> dict | None:
         """Process videos: extract poses, compare, generate feedback.
@@ -52,29 +53,37 @@ class VideoProcessor:
             return None
 
         try:
-            await asyncio.to_thread(Extractor.data_extraction, teacher_file, output_dir, 'teacher')
+            await asyncio.to_thread(Extractor.data_extraction, teacher_file, output_dir, "teacher")
             await send_status("Teacher video extracted.")
 
-            await asyncio.to_thread(Extractor.data_extraction, student_file, output_dir, 'student')
+            await asyncio.to_thread(Extractor.data_extraction, student_file, output_dir, "student")
             await send_status("Student video extracted.")
 
             await send_status("Preprocessing...")
             teacher_data, student_data, preprocess_info = await asyncio.to_thread(
-                Preprocessor.preprocess, output_dir, teacher_file, student_file,
+                Preprocessor.preprocess,
+                output_dir,
+                teacher_file,
+                student_file,
             )
             await send_status("Preprocessing complete.")
 
             await send_status("Comparing performances...")
             results = await asyncio.to_thread(
-                Comparator.compare_dances, teacher_data, student_data,
+                Comparator.compare_dances,
+                teacher_data,
+                student_data,
             )
-            results['preprocess_info'] = preprocess_info
+            results["preprocess_info"] = preprocess_info
             await send_status(f"Comparison complete. Overall score: {results['overall_score']}%")
 
             await send_status("Generating feedback...")
             feedback_result = await asyncio.to_thread(
                 FeedbackGenerator.generate_feedback,
-                results, teacher_file, student_file, output_dir,
+                results,
+                teacher_file,
+                student_file,
+                output_dir,
             )
             results.update(feedback_result)
             await send_status("Feedback ready.")

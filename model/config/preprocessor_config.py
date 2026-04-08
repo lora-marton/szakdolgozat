@@ -3,6 +3,7 @@ Preprocessor configuration.
 
 All constants for preprocessing: audio synchronization and motion trimming.
 """
+
 from dataclasses import dataclass
 
 

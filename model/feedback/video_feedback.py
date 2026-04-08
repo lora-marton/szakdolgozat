@@ -5,6 +5,7 @@ Generates an MP4 showing teacher and student videos side-by-side with
 skeleton overlays. Uses only audio offset to sync the videos (no DTW),
 so the viewer can see timing differences between the dancers.
 """
+
 import os
 import subprocess
 
@@ -46,15 +47,15 @@ class VideoFeedback:
         if config is None:
             config = DEFAULT_EXTRACTION_CONFIG
         if preprocess_info is None:
-            preprocess_info = {'audio_offset': 0}
+            preprocess_info = {"audio_offset": 0}
 
         connections = config.pose_connections
         target_fps = config.target_fps
         output_fps = config.output_fps
-        audio_offset = preprocess_info.get('audio_offset', 0)
+        audio_offset = preprocess_info.get("audio_offset", 0)
 
-        teacher_lm = VideoFeedback._load_landmarks(output_dir, 'teacher')
-        student_lm = VideoFeedback._load_landmarks(output_dir, 'student')
+        teacher_lm = VideoFeedback._load_landmarks(output_dir, "teacher")
+        student_lm = VideoFeedback._load_landmarks(output_dir, "student")
 
         print("[VideoFeedback] Reading teacher video frames...")
         teacher_frames, teacher_src_fps = VideoFeedback._read_resampled_frames(teacher_video, target_fps)
@@ -65,30 +66,38 @@ class VideoFeedback:
         print(f"[VideoFeedback] Student: {len(student_frames)} resampled frames (source: {student_src_fps} fps)")
 
         source_fps = min(teacher_src_fps, student_src_fps)
-        teacher_frames, teacher_lm, student_frames, student_lm, num_frames = (
-            VideoFeedback._apply_audio_offset(
-                teacher_frames, teacher_lm,
-                student_frames, student_lm,
-                audio_offset, target_fps, source_fps,
-            )
+        teacher_frames, teacher_lm, student_frames, student_lm, num_frames = VideoFeedback._apply_audio_offset(
+            teacher_frames,
+            teacher_lm,
+            student_frames,
+            student_lm,
+            audio_offset,
+            target_fps,
+            source_fps,
         )
 
         dimensions = VideoFeedback._compute_output_dimensions(
-            teacher_frames[0], student_frames[0],
+            teacher_frames[0],
+            student_frames[0],
         )
 
-        temp_path = os.path.join(output_dir, 'feedback_video_temp.mp4')
+        temp_path = os.path.join(output_dir, "feedback_video_temp.mp4")
         VideoFeedback._render_frames(
-            teacher_frames, student_frames,
-            teacher_lm, student_lm,
-            connections, dimensions, num_frames,
-            output_fps, temp_path,
+            teacher_frames,
+            student_frames,
+            teacher_lm,
+            student_lm,
+            connections,
+            dimensions,
+            num_frames,
+            output_fps,
+            temp_path,
         )
 
         del teacher_frames
         del student_frames
 
-        output_path = os.path.join(output_dir, 'feedback_video.mp4')
+        output_path = os.path.join(output_dir, "feedback_video.mp4")
         output_path = VideoFeedback._reencode_to_h264(temp_path, output_path)
 
         print(f"[VideoFeedback] Done! Saved to {output_path}")
@@ -105,9 +114,9 @@ class VideoFeedback:
         Returns:
             Landmarks array of shape (N, 33, 4).
         """
-        data_path = os.path.join(output_dir, f'{label}_data.h5')
-        with h5py.File(data_path, 'r') as f:
-            return f['raw'][:]
+        data_path = os.path.join(output_dir, f"{label}_data.h5")
+        with h5py.File(data_path, "r") as f:
+            return f["raw"][:]
 
     @staticmethod
     def _read_resampled_frames(
@@ -175,8 +184,10 @@ class VideoFeedback:
         scale = source_fps / target_fps
         trim_frames = int(round(abs(audio_offset) * scale))
 
-        print(f"[VideoFeedback] Audio offset: {audio_offset} (at {target_fps}fps) "
-              f"= {trim_frames} frames (at {source_fps}fps)")
+        print(
+            f"[VideoFeedback] Audio offset: {audio_offset} (at {target_fps}fps) "
+            f"= {trim_frames} frames (at {source_fps}fps)"
+        )
 
         if audio_offset > 0:
             teacher_frames = teacher_frames[trim_frames:]
@@ -217,10 +228,14 @@ class VideoFeedback:
         new_s_w = int(s_w * s_scale)
 
         return {
-            't_h': t_h, 't_w': t_w,
-            's_h': s_h, 's_w': s_w,
-            'new_t_w': new_t_w, 'new_s_w': new_s_w,
-            'out_w': new_t_w + new_s_w, 'out_h': common_h,
+            "t_h": t_h,
+            "t_w": t_w,
+            "s_h": s_h,
+            "s_w": s_w,
+            "new_t_w": new_t_w,
+            "new_s_w": new_s_w,
+            "out_w": new_t_w + new_s_w,
+            "out_h": common_h,
         }
 
     @staticmethod
@@ -248,16 +263,16 @@ class VideoFeedback:
             output_fps: Output video FPS.
             temp_path: Path for the temporary output file.
         """
-        t_w = dimensions['t_w']
-        t_h = dimensions['t_h']
-        s_w = dimensions['s_w']
-        s_h = dimensions['s_h']
-        new_t_w = dimensions['new_t_w']
-        new_s_w = dimensions['new_s_w']
-        out_w = dimensions['out_w']
-        out_h = dimensions['out_h']
+        t_w = dimensions["t_w"]
+        t_h = dimensions["t_h"]
+        s_w = dimensions["s_w"]
+        s_h = dimensions["s_h"]
+        new_t_w = dimensions["new_t_w"]
+        new_s_w = dimensions["new_s_w"]
+        out_w = dimensions["out_w"]
+        out_h = dimensions["out_h"]
 
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         out = cv2.VideoWriter(temp_path, fourcc, output_fps, (out_w, out_h))
 
         if not out.isOpened():
@@ -272,31 +287,44 @@ class VideoFeedback:
 
             if i < len(teacher_lm):
                 VideoFeedback._draw_skeleton(
-                    teacher_frame, teacher_lm[i], connections, t_w, t_h,
+                    teacher_frame,
+                    teacher_lm[i],
+                    connections,
+                    t_w,
+                    t_h,
                     line_color=(255, 240, 0),
                     point_color=(255, 240, 0),
                 )
 
             if i < len(student_lm):
                 VideoFeedback._draw_skeleton(
-                    student_frame, student_lm[i], connections, s_w, s_h,
+                    student_frame,
+                    student_lm[i],
+                    connections,
+                    s_w,
+                    s_h,
                     line_color=(0, 255, 170),
                     point_color=(0, 255, 170),
                 )
 
             if i < len(teacher_lm):
                 VideoFeedback._draw_skeleton(
-                    student_frame, teacher_lm[i], connections, s_w, s_h,
+                    student_frame,
+                    teacher_lm[i],
+                    connections,
+                    s_w,
+                    s_h,
                     line_color=(255, 240, 0),
                     point_color=(255, 240, 0),
-                    line_thickness=3, point_radius=5,
+                    line_thickness=3,
+                    point_radius=5,
                 )
 
             teacher_resized = cv2.resize(teacher_frame, (new_t_w, out_h))
             student_resized = cv2.resize(student_frame, (new_s_w, out_h))
 
-            VideoFeedback._draw_label(teacher_resized, 'Teacher')
-            VideoFeedback._draw_label(student_resized, 'Student')
+            VideoFeedback._draw_label(teacher_resized, "Teacher")
+            VideoFeedback._draw_label(student_resized, "Student")
 
             composite = np.hstack([teacher_resized, student_resized])
             out.write(composite)
@@ -355,8 +383,14 @@ class VideoFeedback:
         cv2.addWeighted(overlay, 0.5, frame, 0.5, 0, frame)
 
         cv2.putText(
-            frame, text, (10, 26),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA,
+            frame,
+            text,
+            (10, 26),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (255, 255, 255),
+            2,
+            cv2.LINE_AA,
         )
 
     @staticmethod
@@ -375,6 +409,7 @@ class VideoFeedback:
         """
         try:
             import imageio_ffmpeg
+
             ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
         except ImportError:
             print("[VideoFeedback] imageio-ffmpeg not available, skipping H.264 re-encode.")
@@ -384,12 +419,17 @@ class VideoFeedback:
             subprocess.run(
                 [
                     ffmpeg_exe,
-                    '-y',
-                    '-i', input_path,
-                    '-c:v', 'libx264',
-                    '-preset', 'fast',
-                    '-pix_fmt', 'yuv420p',
-                    '-movflags', '+faststart',
+                    "-y",
+                    "-i",
+                    input_path,
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "fast",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-movflags",
+                    "+faststart",
                     output_path,
                 ],
                 check=True,

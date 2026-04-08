@@ -1,6 +1,7 @@
 """
 Skeleton-based comparison metrics: joint angles and center of gravity.
 """
+
 import numpy as np
 
 
@@ -28,15 +29,21 @@ class SkeletonMetrics:
             and 'worst_frames' list.
         """
         teacher_angles = SkeletonMetrics._compute_joint_angles(
-            teacher_landmarks, config.joint_angles,
+            teacher_landmarks,
+            config.joint_angles,
         )
         student_angles = SkeletonMetrics._compute_joint_angles(
-            student_landmarks, config.joint_angles,
+            student_landmarks,
+            config.joint_angles,
         )
         angle_score, per_joint_scores, worst_frames = SkeletonMetrics._compare_angles(
-            teacher_angles, student_angles,
-            teacher_landmarks, student_landmarks,
-            config.joint_angles, config.joint_tolerances, config.angle_sigma,
+            teacher_angles,
+            student_angles,
+            teacher_landmarks,
+            student_landmarks,
+            config.joint_angles,
+            config.joint_tolerances,
+            config.angle_sigma,
             config.visibility_threshold,
         )
 
@@ -47,9 +54,9 @@ class SkeletonMetrics:
         skeleton_score = config.weight_angles * angle_score + config.weight_cog * cog_score
 
         return {
-            'score': round(skeleton_score, 1),
-            'per_joint_scores': per_joint_scores,
-            'worst_frames': worst_frames,
+            "score": round(skeleton_score, 1),
+            "per_joint_scores": per_joint_scores,
+            "worst_frames": worst_frames,
         }
 
     @staticmethod
@@ -108,7 +115,7 @@ class SkeletonMetrics:
 
         selected = positions[:, joint_indices, :]
 
-        cog = np.einsum('j,njd->nd', weights, selected) / weight_sum
+        cog = np.einsum("j,njd->nd", weights, selected) / weight_sum
 
         return cog
 
@@ -152,8 +159,8 @@ class SkeletonMetrics:
         active = np.ones((num_frames, len(joint_names)), dtype=bool)
         for j, (parent, joint, child) in enumerate(angle_definitions):
             for idx in (parent, joint, child):
-                active[:, j] &= (teacher_vis[:, idx] >= vis_threshold)
-                active[:, j] &= (student_vis[:, idx] >= vis_threshold)
+                active[:, j] &= teacher_vis[:, idx] >= vis_threshold
+                active[:, j] &= student_vis[:, idx] >= vis_threshold
 
         errors = np.abs(teacher_angles - student_angles)
 
@@ -183,9 +190,7 @@ class SkeletonMetrics:
         worst_indices = np.argsort(mean_frame_scores)
 
         worst_frames = [
-            (int(idx), round(float(mean_frame_scores[idx]), 1))
-            for idx in worst_indices
-            if active[idx].any()
+            (int(idx), round(float(mean_frame_scores[idx]), 1)) for idx in worst_indices if active[idx].any()
         ]
 
         return round(score, 1), per_joint_scores, worst_frames

@@ -4,6 +4,7 @@ Audio cross-correlation for temporal synchronisation of two dance videos.
 Extracts audio from both videos and computes the lag (in frames)
 between them so downstream steps can align the sequences.
 """
+
 import numpy as np
 from scipy.signal import correlate, correlation_lags
 
@@ -42,8 +43,8 @@ class AudioSync:
             print("[AudioSync] WARNING: Could not extract audio. Assuming zero offset.")
             return 0
 
-        correlation = correlate(audio1, audio2, mode='full')
-        lags = correlation_lags(len(audio1), len(audio2), mode='full')
+        correlation = correlate(audio1, audio2, mode="full")
+        lags = correlation_lags(len(audio1), len(audio2), mode="full")
 
         best_lag_samples = lags[np.argmax(correlation)]
 

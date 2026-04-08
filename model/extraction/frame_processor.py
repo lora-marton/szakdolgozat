@@ -4,6 +4,7 @@ Per-frame pose processing for the extraction pipeline.
 Handles landmark filtering, scale calibration, follow-cam normalization,
 and mask warping. Maintains filter state across frames.
 """
+
 import cv2
 import numpy as np
 
@@ -180,10 +181,12 @@ class FrameProcessor:
         tx = norm_center[0] - (hip_center[0] * self._fixed_scale)
         ty = norm_center[1] - (hip_center[1] * self._fixed_scale)
 
-        return np.float32([
-            [self._fixed_scale, 0, tx],
-            [0, self._fixed_scale, ty],
-        ])
+        return np.float32(
+            [
+                [self._fixed_scale, 0, tx],
+                [0, self._fixed_scale, ty],
+            ]
+        )
 
     def _warp_mask(self, mask: np.ndarray, affine_matrix: np.ndarray) -> np.ndarray:
         """
