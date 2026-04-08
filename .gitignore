@@ -29,7 +29,6 @@ dist/
 data/
 uploaded_videos/
 *.h5
-*.json
 *.mp4
 *.avi
 *.mov
