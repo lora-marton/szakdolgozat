@@ -6,6 +6,7 @@ that VideoFeedback expects, then drives FeedbackGenerator.generate_feedback
 end-to-end and verifies the returned dict structure and output artifacts.
 """
 
+import logging
 import os
 import shutil
 import sys
@@ -20,6 +21,8 @@ import config_for_tests  # noqa: F401
 
 from model.config import DEFAULT_FEEDBACK_CONFIG
 from model.feedback.feedback_generator import FeedbackGenerator
+
+logger = logging.getLogger(__name__)
 
 
 def _make_synthetic_results() -> dict:
@@ -123,12 +126,12 @@ class TestFeedbackGenerator:
             DEFAULT_FEEDBACK_CONFIG,
         )
 
-        print("=== Feedback Generator Keys ===")
-        print(f"  keys: {sorted(out.keys())}")
+        logger.info("=== Feedback Generator Keys ===")
+        logger.info("  keys: %s", sorted(out.keys()))
         assert set(out.keys()) == {"feedback", "timeline_markers", "feedback_video"}
         assert isinstance(out["feedback"], list) and len(out["feedback"]) > 0
         assert isinstance(out["timeline_markers"], list)
-        print("  PASSED\n")
+        logger.info("  PASSED\n")
 
     def test_feedback_video_file_exists(self):
         """The generated feedback video must actually exist on disk."""
@@ -142,11 +145,11 @@ class TestFeedbackGenerator:
         )
 
         produced = os.path.join(self.tmpdir, out["feedback_video"])
-        print("=== Feedback Video File ===")
-        print(f"  produced: {produced}")
+        logger.info("=== Feedback Video File ===")
+        logger.info("  produced: %s", produced)
         assert os.path.isfile(produced)
         assert out["feedback_video"].endswith(".mp4")
-        print("  PASSED\n")
+        logger.info("  PASSED\n")
 
     def test_uses_default_config_when_none(self):
         """Passing config=None should fall back to DEFAULT_FEEDBACK_CONFIG."""
@@ -160,7 +163,7 @@ class TestFeedbackGenerator:
             None,
         )
 
-        print("=== Feedback Default Config ===")
-        print(f"  feedback lines: {len(out['feedback'])}")
+        logger.info("=== Feedback Default Config ===")
+        logger.info("  feedback lines: %d", len(out["feedback"]))
         assert len(out["feedback"]) > 0
-        print("  PASSED\n")
+        logger.info("  PASSED\n")

@@ -5,12 +5,15 @@ Handles landmark filtering, scale calibration, follow-cam normalization,
 and mask warping. Maintains filter state across frames.
 """
 
+import logging
+
 import cv2
 import numpy as np
 
 from model.config.extraction_config import ExtractionConfig
 from model.extraction.one_euro_filter import OneEuroFilter
 
+logger = logging.getLogger(__name__)
 
 class FrameProcessor:
     """Filters, calibrates, and normalizes pose data frame by frame."""
@@ -131,7 +134,7 @@ class FrameProcessor:
 
         torso_len = self._get_torso_length(landmarks, vid_w, vid_h)
         self._fixed_scale = self._config.target_torso_px / torso_len
-        print(f"Calibration Complete. Fixed Scale: {self._fixed_scale:.2f}")
+        logger.info("Calibration Complete. Fixed Scale: %.2f", self._fixed_scale)
 
     def _get_hip_center(self, landmarks: np.ndarray, vid_w: int, vid_h: int) -> np.ndarray:
         """

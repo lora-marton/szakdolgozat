@@ -5,6 +5,7 @@ Covers the joint-flattening helper and several alignment scenarios:
 identical sequences, a shifted sequence, and a tight Sakoe-Chiba window.
 """
 
+import logging
 import os
 import sys
 
@@ -16,6 +17,8 @@ from config_for_tests import make_stick_figure_landmarks
 
 from model.comparison.dtw import DTW
 
+logger = logging.getLogger(__name__)
+
 JOINT_INDICES = (11, 12, 13, 14, 23, 24)
 
 
@@ -25,12 +28,12 @@ def test_flatten_joints_shape_and_values():
 
     flat = DTW._flatten_joints(landmarks, (0, 5))
 
-    print("=== Flatten Joints ===")
-    print(f"  shape: {flat.shape}")
+    logger.info("=== Flatten Joints ===")
+    logger.info("  shape: %s", flat.shape)
     assert flat.shape == (2, 6)
     assert np.allclose(flat[0, :3], landmarks[0, 0, :3])
     assert np.allclose(flat[0, 3:], landmarks[0, 5, :3])
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_identical_sequences_produce_diagonal_alignment():
@@ -40,12 +43,12 @@ def test_identical_sequences_produce_diagonal_alignment():
 
     path, cost = DTW.align_sequences(teacher, student, JOINT_INDICES, window_size=10)
 
-    print("=== Identical Alignment ===")
-    print(f"  path len: {len(path)}, cost: {cost:.4f}")
+    logger.info("=== Identical Alignment ===")
+    logger.info("  path len: %d, cost: %.4f", len(path), cost)
     assert cost < 1e-3
     assert path[0] == (0, 0)
     assert path[-1] == (19, 19)
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_shifted_sequence_still_aligns():
@@ -56,11 +59,11 @@ def test_shifted_sequence_still_aligns():
 
     path, cost = DTW.align_sequences(teacher, student, JOINT_INDICES, window_size=10)
 
-    print("=== Shifted Sequence ===")
-    print(f"  path len: {len(path)}, cost: {cost:.4f}")
+    logger.info("=== Shifted Sequence ===")
+    logger.info("  path len: %d, cost: %.4f", len(path), cost)
     assert len(path) >= 25
     assert cost >= 0.0
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_alignment_path_types_are_ints():
@@ -70,10 +73,10 @@ def test_alignment_path_types_are_ints():
 
     path, _ = DTW.align_sequences(teacher, student, JOINT_INDICES, window_size=6)
 
-    print("=== Path Element Types ===")
-    print(f"  first three: {path[:3]}")
+    logger.info("=== Path Element Types ===")
+    logger.info("  first three: %s", path[:3])
     assert all(isinstance(t, int) and isinstance(s, int) for t, s in path)
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_different_length_sequences():
@@ -86,17 +89,18 @@ def test_different_length_sequences():
     teacher_max = max(p[0] for p in path)
     student_max = max(p[1] for p in path)
 
-    print("=== Different Lengths ===")
-    print(f"  teacher_max={teacher_max}, student_max={student_max}")
+    logger.info("=== Different Lengths ===")
+    logger.info("  teacher_max=%d, student_max=%d", teacher_max, student_max)
     assert teacher_max == 14
     assert student_max == 19
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     test_flatten_joints_shape_and_values()
     test_identical_sequences_produce_diagonal_alignment()
     test_shifted_sequence_still_aligns()
     test_alignment_path_types_are_ints()
     test_different_length_sequences()
-    print("All tests passed!")
+    logger.info("All tests passed!")

@@ -5,10 +5,14 @@ Tests several scenarios with synthetic comparison results to ensure
 the rule-based feedback generator produces expected messages.
 """
 
+import logging
+
 import numpy as np
 
 from model.config import DEFAULT_FEEDBACK_CONFIG
 from model.feedback.text_feedback import TextFeedback
+
+logger = logging.getLogger(__name__)
 
 
 def _make_results(**overrides):
@@ -59,13 +63,13 @@ def test_excellent_performance():
     results = _make_results()
     feedback = TextFeedback.generate_messages(results, DEFAULT_FEEDBACK_CONFIG)
 
-    print("=== Excellent Performance ===")
+    logger.info("=== Excellent Performance ===")
     for msg in feedback:
-        print(f"  {msg}")
+        logger.info("  %s", msg)
 
     assert any("Excellent" in m for m in feedback), "Should have excellent summary"
     assert any("Great joint accuracy" in m for m in feedback), "Should have praise messages"
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_poor_joint():
@@ -94,13 +98,13 @@ def test_poor_joint():
     )
     feedback = TextFeedback.generate_messages(results, DEFAULT_FEEDBACK_CONFIG)
 
-    print("=== Poor Elbow Score ===")
+    logger.info("=== Poor Elbow Score ===")
     for msg in feedback:
-        print(f"  {msg}")
+        logger.info("  %s", msg)
 
     assert any("left elbow" in m.lower() for m in feedback), "Should warn about left elbow"
     assert not any("left knee" in m.lower() for m in feedback), "Knees are fine"
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_trajectory_warning():
@@ -111,12 +115,12 @@ def test_trajectory_warning():
     )
     feedback = TextFeedback.generate_messages(results, DEFAULT_FEEDBACK_CONFIG)
 
-    print("=== Low Trajectory ===")
+    logger.info("=== Low Trajectory ===")
     for msg in feedback:
-        print(f"  {msg}")
+        logger.info("  %s", msg)
 
     assert any("Trajectory" in m for m in feedback), "Should warn about trajectory"
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_energy_too_low():
@@ -133,12 +137,12 @@ def test_energy_too_low():
     )
     feedback = TextFeedback.generate_messages(results, DEFAULT_FEEDBACK_CONFIG)
 
-    print("=== Low Energy ===")
+    logger.info("=== Low Energy ===")
     for msg in feedback:
-        print(f"  {msg}")
+        logger.info("  %s", msg)
 
     assert any("less energetic" in m for m in feedback), "Should flag low energy"
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_energy_too_high():
@@ -155,12 +159,12 @@ def test_energy_too_high():
     )
     feedback = TextFeedback.generate_messages(results, DEFAULT_FEEDBACK_CONFIG)
 
-    print("=== High Energy ===")
+    logger.info("=== High Energy ===")
     for msg in feedback:
-        print(f"  {msg}")
+        logger.info("  %s", msg)
 
     assert any("exaggerated" in m for m in feedback), "Should flag high energy"
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_worst_moment():
@@ -170,20 +174,21 @@ def test_worst_moment():
     )
     feedback = TextFeedback.generate_messages(results, DEFAULT_FEEDBACK_CONFIG)
 
-    print("=== Worst Moment ===")
+    logger.info("=== Worst Moment ===")
     for msg in feedback:
-        print(f"  {msg}")
+        logger.info("  %s", msg)
 
     assert any("biggest deviation" in m and "35.2%" in m for m in feedback), "Should highlight worst moment"
     assert any("s " in m for m in feedback), "Should use seconds, not frames"
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     test_excellent_performance()
     test_poor_joint()
     test_trajectory_warning()
     test_energy_too_low()
     test_energy_too_high()
     test_worst_moment()
-    print("All tests passed!")
+    logger.info("All tests passed!")

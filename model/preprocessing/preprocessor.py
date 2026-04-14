@@ -9,6 +9,7 @@ Loads HDF5 data, synchronises and trims two dance sequences before DTW alignment
 5. Intersection              → keep only the overlapping active region
 """
 
+import logging
 import os
 
 import h5py
@@ -18,6 +19,8 @@ from model.config import DEFAULT_PREPROCESSOR_CONFIG
 from model.config.preprocessor_config import PreprocessorConfig
 from model.preprocessing.audio_sync import AudioSync
 from model.preprocessing.motion_energy import MotionEnergy
+
+logger = logging.getLogger(__name__)
 
 
 class Preprocessor:
@@ -58,9 +61,10 @@ class Preprocessor:
             target_fps=fps,
             sr=config.audio_sample_rate,
         )
-        print(
-            f"[Preprocessor] Audio offset: {offset} frames "
-            f"({'teacher leads' if offset > 0 else 'student leads' if offset < 0 else 'in sync'})"
+        logger.info(
+            "Audio offset: %d frames (%s)",
+            offset,
+            "teacher leads" if offset > 0 else "student leads" if offset < 0 else "in sync",
         )
 
         teacher_audio_trim = offset if offset > 0 else 0
@@ -84,14 +88,14 @@ class Preprocessor:
             config.active_window_ratio,
         )
 
-        print(f"[Preprocessor] Teacher active range: frames {t_start}--{t_end}")
-        print(f"[Preprocessor] Student active range: frames {s_start}--{s_end}")
+        logger.info("Teacher active range: frames %d--%d", t_start, t_end)
+        logger.info("Student active range: frames %d--%d", s_start, s_end)
 
         shared_start = max(t_start, s_start)
         shared_end = min(t_end, s_end)
 
         if shared_start >= shared_end:
-            print("[Preprocessor] WARNING: No overlapping active region found. " "Skipping trimming.")
+            logger.warning("No overlapping active region found. Skipping trimming.")
             preprocess_info = {
                 "audio_offset": offset,
                 "teacher_offset": teacher_audio_trim,
@@ -99,9 +103,11 @@ class Preprocessor:
             }
             return teacher_data, student_data, preprocess_info
 
-        print(
-            f"[Preprocessor] Shared active region: frames {shared_start}--{shared_end} "
-            f"({shared_end - shared_start} frames)"
+        logger.info(
+            "Shared active region: frames %d--%d (%d frames)",
+            shared_start,
+            shared_end,
+            shared_end - shared_start,
         )
 
         teacher_data = Preprocessor._slice_data(teacher_data, shared_start, shared_end)

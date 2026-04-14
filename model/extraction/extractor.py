@@ -6,6 +6,7 @@ delegates per-frame processing to FrameProcessor, and saves the
 results as HDF5 files.
 """
 
+import logging
 import os
 
 import cv2
@@ -17,6 +18,8 @@ from model.config import DEFAULT_EXTRACTION_CONFIG
 from model.config.extraction_config import ExtractionConfig
 from model.extraction.frame_processor import FrameProcessor
 from model.extraction.visualization import Visualization
+
+logger = logging.getLogger(__name__)
 
 
 class Extractor:
@@ -61,7 +64,7 @@ class Extractor:
             frame_interval_ms = 1000.0 / config.target_fps
             last_processed_time = -frame_interval_ms
 
-            print(f"Source: {vid_w}x{vid_h} @ {source_fps} FPS. Target: {config.target_fps} FPS")
+            logger.info("Source: %dx%d @ %s FPS. Target: %s FPS", vid_w, vid_h, source_fps, config.target_fps)
 
             while cap.isOpened():
                 ret, frame = cap.read()
@@ -224,7 +227,7 @@ class Extractor:
         output_path = os.path.join(output_dir, f"{label}_data.h5")
         output_mask_path = os.path.join(output_dir, f"{label}_masks.h5")
 
-        print(f"Saving {len(collected_raw)} frames...")
+        logger.info("Saving %d frames...", len(collected_raw))
 
         with h5py.File(output_path, "w") as f:
             f.create_dataset("raw", data=np.array(collected_raw, dtype=np.float32))
@@ -233,7 +236,7 @@ class Extractor:
             f.attrs["fps"] = target_fps
             f.attrs["fixed_scale"] = fixed_scale if fixed_scale is not None else 1.0
 
-        print(f"Saving masks to {output_mask_path} (gzip)...")
+        logger.info("Saving masks to %s (gzip)...", output_mask_path)
         with h5py.File(output_mask_path, "w") as f:
             f.create_dataset(
                 "masks",
@@ -242,4 +245,4 @@ class Extractor:
                 compression_opts=4,
             )
 
-        print("Done!")
+        logger.info("Done!")

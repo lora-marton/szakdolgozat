@@ -2,6 +2,7 @@
 Unit tests for motion energy computation and active-range detection.
 """
 
+import logging
 import os
 import sys
 
@@ -13,6 +14,8 @@ from config_for_tests import make_stick_figure_landmarks
 
 from model.preprocessing.motion_energy import MotionEnergy
 
+logger = logging.getLogger(__name__)
+
 
 def test_compute_motion_energy_static_pose():
     """A perfectly static pose should have zero motion energy everywhere."""
@@ -20,11 +23,11 @@ def test_compute_motion_energy_static_pose():
 
     energy = MotionEnergy.compute_motion_energy(lm)
 
-    print("=== Motion Energy Static ===")
-    print(f"  shape: {energy.shape}, max: {energy.max():.6f}")
+    logger.info("=== Motion Energy Static ===")
+    logger.info("  shape: %s, max: %.6f", energy.shape, energy.max())
     assert energy.shape == (9,)
     assert np.allclose(energy, 0.0)
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_compute_motion_energy_moving_pose():
@@ -35,11 +38,11 @@ def test_compute_motion_energy_moving_pose():
 
     energy = MotionEnergy.compute_motion_energy(lm)
 
-    print("=== Motion Energy Moving ===")
-    print(f"  energy: {energy.tolist()}")
+    logger.info("=== Motion Energy Moving ===")
+    logger.info("  energy: %s", energy.tolist())
     assert np.all(energy > 0.0)
     assert np.allclose(energy, energy[0], atol=1e-6)
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_find_active_range_single_burst():
@@ -54,11 +57,11 @@ def test_find_active_range_single_burst():
         active_window_ratio=0.7,
     )
 
-    print("=== Active Range Single Burst ===")
-    print(f"  start: {start}, end: {end}")
+    logger.info("=== Active Range Single Burst ===")
+    logger.info("  start: %d, end: %d", start, end)
     assert 18 <= start <= 22
     assert 38 <= end <= 42
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_find_active_range_noise_below_threshold():
@@ -74,11 +77,11 @@ def test_find_active_range_noise_below_threshold():
         active_window_ratio=0.7,
     )
 
-    print("=== Active Range Noise ===")
-    print(f"  start: {start}, end: {end}")
+    logger.info("=== Active Range Noise ===")
+    logger.info("  start: %d, end: %d", start, end)
     assert start >= 18
     assert end <= 37
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_find_active_range_short_burst_rejected():
@@ -94,16 +97,17 @@ def test_find_active_range_short_burst_rejected():
         active_window_ratio=0.7,
     )
 
-    print("=== Active Range Short Burst ===")
-    print(f"  start: {start}, end: {end}")
+    logger.info("=== Active Range Short Burst ===")
+    logger.info("  start: %d, end: %d", start, end)
     assert start >= 18
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     test_compute_motion_energy_static_pose()
     test_compute_motion_energy_moving_pose()
     test_find_active_range_single_burst()
     test_find_active_range_noise_below_threshold()
     test_find_active_range_short_burst_rejected()
-    print("All tests passed!")
+    logger.info("All tests passed!")

@@ -8,6 +8,7 @@ for real against synthetic HDF5 + mp4 fixtures.
 """
 
 import asyncio
+import logging
 import os
 import shutil
 import sys
@@ -16,7 +17,6 @@ import tempfile
 import cv2
 import h5py
 import numpy as np
-import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config_for_tests
@@ -25,6 +25,8 @@ from config_for_tests import make_masks, make_stick_figure_landmarks, make_traje
 from model import video_processor as video_processor_module
 from model.preprocessing import audio_sync as audio_sync_module
 from model.video_processor import VideoProcessor
+
+logger = logging.getLogger(__name__)
 
 
 def _create_video(path: str, num_frames: int, color: tuple):
@@ -101,8 +103,8 @@ class TestVideoProcessor:
             )
         )
 
-        print("=== VideoProcessor Smoke ===")
-        print(f"  result keys: {sorted(result.keys()) if result else None}")
+        logger.info("=== VideoProcessor Smoke ===")
+        logger.info("  result keys: %s", sorted(result.keys()) if result else None)
         assert result is not None
         for key in (
             "overall_score",
@@ -116,7 +118,7 @@ class TestVideoProcessor:
             assert key in result, f"missing key: {key}"
         assert isinstance(result["feedback"], list) and len(result["feedback"]) > 0
         assert os.path.isfile(os.path.join(self.tmpdir, result["feedback_video"]))
-        print("  PASSED\n")
+        logger.info("  PASSED\n")
 
     def test_missing_video_returns_none(self):
         """A missing input file should short-circuit and return None."""
@@ -128,10 +130,10 @@ class TestVideoProcessor:
             )
         )
 
-        print("=== VideoProcessor Missing Input ===")
-        print(f"  result: {result}")
+        logger.info("=== VideoProcessor Missing Input ===")
+        logger.info("  result: %s", result)
         assert result is None
-        print("  PASSED\n")
+        logger.info("  PASSED\n")
 
     def test_event_handler_receives_status_updates(self):
         """The async event handler should be invoked with status strings."""
@@ -149,8 +151,8 @@ class TestVideoProcessor:
             )
         )
 
-        print("=== VideoProcessor Event Handler ===")
-        print(f"  messages: {messages[:3]}... ({len(messages)} total)")
+        logger.info("=== VideoProcessor Event Handler ===")
+        logger.info("  messages: %s... (%d total)", messages[:3], len(messages))
         assert len(messages) > 0
         assert any("Processing" in m for m in messages)
-        print("  PASSED\n")
+        logger.info("  PASSED\n")

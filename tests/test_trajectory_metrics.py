@@ -5,6 +5,7 @@ Covers direction similarity, speed similarity, and the combined
 trajectory score under several scenarios.
 """
 
+import logging
 import os
 import sys
 
@@ -15,6 +16,8 @@ import config_for_tests  # noqa: F401
 
 from model.comparison.trajectory_metrics import TrajectoryMetrics
 
+logger = logging.getLogger(__name__)
+
 
 def test_direction_similarity_same_direction():
     """Parallel velocity vectors should score 1.0."""
@@ -23,10 +26,10 @@ def test_direction_similarity_same_direction():
 
     sim = TrajectoryMetrics._direction_similarity(v, v, speed, speed)
 
-    print("=== Direction Same ===")
-    print(f"  sim: {sim.tolist()}")
+    logger.info("=== Direction Same ===")
+    logger.info("  sim: %s", sim.tolist())
     assert np.allclose(sim, 1.0)
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_direction_similarity_opposite_direction():
@@ -41,10 +44,10 @@ def test_direction_similarity_opposite_direction():
         np.linalg.norm(b, axis=-1),
     )
 
-    print("=== Direction Opposite ===")
-    print(f"  sim: {sim.tolist()}")
+    logger.info("=== Direction Opposite ===")
+    logger.info("  sim: %s", sim.tolist())
     assert abs(sim[0] - 0.0) < 1e-6
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_direction_similarity_orthogonal():
@@ -59,10 +62,10 @@ def test_direction_similarity_orthogonal():
         np.linalg.norm(b, axis=-1),
     )
 
-    print("=== Direction Orthogonal ===")
-    print(f"  sim: {sim.tolist()}")
+    logger.info("=== Direction Orthogonal ===")
+    logger.info("  sim: %s", sim.tolist())
     assert abs(sim[0] - 0.5) < 1e-6
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_speed_similarity_equal_speeds():
@@ -71,10 +74,10 @@ def test_speed_similarity_equal_speeds():
 
     ratio = TrajectoryMetrics._speed_similarity(speed, speed)
 
-    print("=== Speed Equal ===")
-    print(f"  ratio: {ratio.tolist()}")
+    logger.info("=== Speed Equal ===")
+    logger.info("  ratio: %s", ratio.tolist())
     assert np.allclose(ratio, 1.0)
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_speed_similarity_doubled_speed():
@@ -84,10 +87,10 @@ def test_speed_similarity_doubled_speed():
 
     ratio = TrajectoryMetrics._speed_similarity(t, s)
 
-    print("=== Speed Doubled ===")
-    print(f"  ratio: {ratio.tolist()}")
+    logger.info("=== Speed Doubled ===")
+    logger.info("  ratio: %s", ratio.tolist())
     assert abs(ratio[0] - 0.5) < 1e-6
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_trajectory_score_identical_path():
@@ -101,11 +104,11 @@ def test_trajectory_score_identical_path():
         weight_speed=0.25,
     )
 
-    print("=== Trajectory Identical ===")
-    print(f"  result: {result}")
+    logger.info("=== Trajectory Identical ===")
+    logger.info("  result: %s", result)
     assert result["score"] == 100.0
     assert result["direction_similarity"] == 1.0
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_trajectory_score_static_paths():
@@ -119,10 +122,10 @@ def test_trajectory_score_static_paths():
         weight_speed=0.25,
     )
 
-    print("=== Trajectory Static ===")
-    print(f"  result: {result}")
+    logger.info("=== Trajectory Static ===")
+    logger.info("  result: %s", result)
     assert result["score"] == 100.0
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_trajectory_score_mirrored_direction():
@@ -137,14 +140,15 @@ def test_trajectory_score_mirrored_direction():
         weight_speed=0.25,
     )
 
-    print("=== Trajectory Mirrored ===")
-    print(f"  result: {result}")
+    logger.info("=== Trajectory Mirrored ===")
+    logger.info("  result: %s", result)
     assert result["direction_similarity"] < 0.1
     assert result["score"] < 30.0
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     test_direction_similarity_same_direction()
     test_direction_similarity_opposite_direction()
     test_direction_similarity_orthogonal()
@@ -153,4 +157,4 @@ if __name__ == "__main__":
     test_trajectory_score_identical_path()
     test_trajectory_score_static_paths()
     test_trajectory_score_mirrored_direction()
-    print("All tests passed!")
+    logger.info("All tests passed!")

@@ -13,7 +13,6 @@ import tempfile
 import cv2
 import h5py
 import numpy as np
-import pytest
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if ROOT_DIR not in sys.path:

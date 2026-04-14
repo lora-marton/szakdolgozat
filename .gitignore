@@ -37,5 +37,3 @@ uploaded_videos/
 # OS
 .DS_Store
 Thumbs.db
-
-.claude/

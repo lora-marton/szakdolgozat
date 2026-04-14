@@ -6,6 +6,7 @@ skeleton overlays. Uses only audio offset to sync the videos (no DTW),
 so the viewer can see timing differences between the dancers.
 """
 
+import logging
 import os
 import subprocess
 
@@ -15,6 +16,8 @@ import numpy as np
 
 from model.config import DEFAULT_EXTRACTION_CONFIG
 from model.config.extraction_config import ExtractionConfig
+
+logger = logging.getLogger(__name__)
 
 
 class VideoFeedback:
@@ -57,13 +60,13 @@ class VideoFeedback:
         teacher_lm = VideoFeedback._load_landmarks(output_dir, "teacher")
         student_lm = VideoFeedback._load_landmarks(output_dir, "student")
 
-        print("[VideoFeedback] Reading teacher video frames...")
+        logger.info("Reading teacher video frames...")
         teacher_frames, teacher_src_fps = VideoFeedback._read_resampled_frames(teacher_video, target_fps)
-        print(f"[VideoFeedback] Teacher: {len(teacher_frames)} resampled frames (source: {teacher_src_fps} fps)")
+        logger.info("Teacher: %d resampled frames (source: %s fps)", len(teacher_frames), teacher_src_fps)
 
-        print("[VideoFeedback] Reading student video frames...")
+        logger.info("Reading student video frames...")
         student_frames, student_src_fps = VideoFeedback._read_resampled_frames(student_video, target_fps)
-        print(f"[VideoFeedback] Student: {len(student_frames)} resampled frames (source: {student_src_fps} fps)")
+        logger.info("Student: %d resampled frames (source: %s fps)", len(student_frames), student_src_fps)
 
         source_fps = min(teacher_src_fps, student_src_fps)
         teacher_frames, teacher_lm, student_frames, student_lm, num_frames = VideoFeedback._apply_audio_offset(
@@ -100,7 +103,7 @@ class VideoFeedback:
         output_path = os.path.join(output_dir, "feedback_video.mp4")
         output_path = VideoFeedback._reencode_to_h264(temp_path, output_path)
 
-        print(f"[VideoFeedback] Done! Saved to {output_path}")
+        logger.info("Done! Saved to %s", output_path)
         return output_path
 
     @staticmethod
@@ -184,22 +187,25 @@ class VideoFeedback:
         scale = source_fps / target_fps
         trim_frames = int(round(abs(audio_offset) * scale))
 
-        print(
-            f"[VideoFeedback] Audio offset: {audio_offset} (at {target_fps}fps) "
-            f"= {trim_frames} frames (at {source_fps}fps)"
+        logger.info(
+            "Audio offset: %s (at %sfps) = %d frames (at %sfps)",
+            audio_offset,
+            target_fps,
+            trim_frames,
+            source_fps,
         )
 
         if audio_offset > 0:
             teacher_frames = teacher_frames[trim_frames:]
             teacher_lm = teacher_lm[trim_frames:]
-            print(f"[VideoFeedback] Trimmed {trim_frames} leading teacher frames")
+            logger.info("Trimmed %d leading teacher frames", trim_frames)
         elif audio_offset < 0:
             student_frames = student_frames[trim_frames:]
             student_lm = student_lm[trim_frames:]
-            print(f"[VideoFeedback] Trimmed {trim_frames} leading student frames")
+            logger.info("Trimmed %d leading student frames", trim_frames)
 
         num_frames = min(len(teacher_frames), len(student_frames))
-        print(f"[VideoFeedback] Playing {num_frames} aligned frames")
+        logger.info("Playing %d aligned frames", num_frames)
 
         return teacher_frames, teacher_lm, student_frames, student_lm, num_frames
 
@@ -280,7 +286,7 @@ class VideoFeedback:
 
         for i in range(num_frames):
             if i % 100 == 0:
-                print(f"[VideoFeedback] Frame {i}/{num_frames}")
+                logger.debug("Frame %d/%d", i, num_frames)
 
             teacher_frame = teacher_frames[i].copy()
             student_frame = student_frames[i].copy()
@@ -330,7 +336,7 @@ class VideoFeedback:
             out.write(composite)
 
         out.release()
-        print("[VideoFeedback] Raw video written. Re-encoding to H.264...")
+        logger.info("Raw video written. Re-encoding to H.264...")
 
     @staticmethod
     def _draw_skeleton(
@@ -408,11 +414,11 @@ class VideoFeedback:
             Path to the final output file.
         """
         try:
-            import imageio_ffmpeg
+            import imageio_ffmpeg  # type: ignore[import-untyped]
 
             ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
         except ImportError:
-            print("[VideoFeedback] imageio-ffmpeg not available, skipping H.264 re-encode.")
+            logger.warning("imageio-ffmpeg not available, skipping H.264 re-encode.")
             return input_path
 
         try:
@@ -438,6 +444,6 @@ class VideoFeedback:
             os.remove(input_path)
             return output_path
         except subprocess.CalledProcessError as e:
-            print(f"[VideoFeedback] ffmpeg re-encode failed: {e.stderr.decode()}")
+            logger.error("ffmpeg re-encode failed: %s", e.stderr.decode())
             os.rename(input_path, output_path)
             return output_path

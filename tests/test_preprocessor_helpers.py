@@ -5,6 +5,7 @@ Covers array slicing, offset application in both directions, and HDF5
 session loading from a temporary directory.
 """
 
+import logging
 import os
 import shutil
 import sys
@@ -17,6 +18,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config_for_tests  # noqa: F401
 
 from model.preprocessing.preprocessor import Preprocessor
+
+logger = logging.getLogger(__name__)
 
 
 def _make_data(n: int, offset: float = 0.0) -> dict:
@@ -36,14 +39,14 @@ def test_slice_data_trims_arrays_and_preserves_scalars():
 
     sliced = Preprocessor._slice_data(data, 2, 5)
 
-    print("=== Slice Data ===")
-    print(f"  landmarks: {sliced['landmarks'].shape}, fps: {sliced['fps']}")
+    logger.info("=== Slice Data ===")
+    logger.info("  landmarks: %s, fps: %s", sliced["landmarks"].shape, sliced["fps"])
     assert sliced["landmarks"].shape == (3, 33, 4)
     assert sliced["masks"].shape == (3, 32, 32)
     assert sliced["trajectory"].shape == (3, 2)
     assert sliced["fps"] == 60.0
     assert sliced["fixed_scale"] == 1.25
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_slice_data_end_none_slices_to_end():
@@ -52,10 +55,10 @@ def test_slice_data_end_none_slices_to_end():
 
     sliced = Preprocessor._slice_data(data, 3, None)
 
-    print("=== Slice Data End None ===")
-    print(f"  landmarks shape: {sliced['landmarks'].shape}")
+    logger.info("=== Slice Data End None ===")
+    logger.info("  landmarks shape: %s", sliced["landmarks"].shape)
     assert sliced["landmarks"].shape == (4, 33, 4)
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_apply_offset_positive_trims_teacher():
@@ -65,12 +68,12 @@ def test_apply_offset_positive_trims_teacher():
 
     t_out, s_out = Preprocessor._apply_offset(teacher, student, offset=3)
 
-    print("=== Apply Offset Positive ===")
-    print(f"  teacher: {t_out['landmarks'].shape}, student: {s_out['landmarks'].shape}")
+    logger.info("=== Apply Offset Positive ===")
+    logger.info("  teacher: %s, student: %s", t_out["landmarks"].shape, s_out["landmarks"].shape)
     assert t_out["landmarks"].shape[0] == 7
     assert s_out["landmarks"].shape[0] == 7
     assert np.isclose(t_out["landmarks"][0, 0, 0], 3 * 33 * 4)
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_apply_offset_negative_trims_student():
@@ -80,12 +83,12 @@ def test_apply_offset_negative_trims_student():
 
     t_out, s_out = Preprocessor._apply_offset(teacher, student, offset=-2)
 
-    print("=== Apply Offset Negative ===")
-    print(f"  teacher: {t_out['landmarks'].shape}, student: {s_out['landmarks'].shape}")
+    logger.info("=== Apply Offset Negative ===")
+    logger.info("  teacher: %s, student: %s", t_out["landmarks"].shape, s_out["landmarks"].shape)
     assert t_out["landmarks"].shape[0] == 8
     assert s_out["landmarks"].shape[0] == 8
     assert np.isclose(s_out["landmarks"][0, 0, 0], 1000.0 + 2 * 33 * 4)
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_apply_offset_zero_length_matches():
@@ -95,11 +98,11 @@ def test_apply_offset_zero_length_matches():
 
     t_out, s_out = Preprocessor._apply_offset(teacher, student, offset=0)
 
-    print("=== Apply Offset Zero ===")
-    print(f"  teacher: {t_out['landmarks'].shape}, student: {s_out['landmarks'].shape}")
+    logger.info("=== Apply Offset Zero ===")
+    logger.info("  teacher: %s, student: %s", t_out["landmarks"].shape, s_out["landmarks"].shape)
     assert t_out["landmarks"].shape[0] == 8
     assert s_out["landmarks"].shape[0] == 8
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 class TestLoadSessionData:
@@ -130,17 +133,18 @@ class TestLoadSessionData:
         """All arrays and scalar attributes should be read back correctly."""
         data = Preprocessor._load_session_data(self.tmpdir, "teacher")
 
-        print("=== Load Session Data ===")
-        print(f"  keys: {sorted(data.keys())}")
+        logger.info("=== Load Session Data ===")
+        logger.info("  keys: %s", sorted(data.keys()))
         assert data["landmarks"].shape == (self.n, 33, 4)
         assert data["trajectory"].shape == (self.n, 2)
         assert data["masks"].shape == (self.n, 16, 16)
         assert data["fps"] == 30.0
         assert data["fixed_scale"] == 2.5
-        print("  PASSED\n")
+        logger.info("  PASSED\n")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     test_slice_data_trims_arrays_and_preserves_scalars()
     test_slice_data_end_none_slices_to_end()
     test_apply_offset_positive_trims_teacher()
@@ -152,4 +156,4 @@ if __name__ == "__main__":
         t.test_load_session_data_reads_all_fields()
     finally:
         t.teardown_method()
-    print("All tests passed!")
+    logger.info("All tests passed!")

@@ -6,6 +6,7 @@ feedback retrieval, video streaming, and session listing.
 """
 
 import asyncio
+import logging
 import os
 import shutil
 import sys
@@ -30,6 +31,7 @@ UPLOAD_FOLDER = os.path.join(ROOT_DIR, "uploaded_videos")
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
+logger = logging.getLogger(__name__)
 status_queue = asyncio.Queue()
 
 
@@ -253,5 +255,9 @@ async def list_sessions() -> JSONResponse:
 
 
 if __name__ == "__main__":
-    print("Starting server on http://localhost:8000")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    logger.info("Starting server on http://localhost:8000")
     uvicorn.run(app, host="127.0.0.1", port=8000)

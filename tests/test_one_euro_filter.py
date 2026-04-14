@@ -5,6 +5,7 @@ Covers constant-signal preservation, smoothing of a step, the internal
 alpha formula, and adaptive tracking of fast movement.
 """
 
+import logging
 import math
 import os
 import sys
@@ -14,6 +15,8 @@ import config_for_tests  # noqa: F401
 
 from model.extraction.one_euro_filter import OneEuroFilter
 
+logger = logging.getLogger(__name__)
+
 
 def test_constant_signal_is_preserved():
     """A constant input should produce a (near-)constant output."""
@@ -21,10 +24,10 @@ def test_constant_signal_is_preserved():
 
     outputs = [f(t=i * 0.01, x=5.0) for i in range(1, 50)]
 
-    print("=== Constant Signal ===")
-    print(f"  last three outputs: {outputs[-3:]}")
+    logger.info("=== Constant Signal ===")
+    logger.info("  last three outputs: %s", outputs[-3:])
     assert all(abs(o - 5.0) < 1e-6 for o in outputs)
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_step_response_is_smoothed():
@@ -33,10 +36,10 @@ def test_step_response_is_smoothed():
 
     out = f(t=0.01, x=10.0)
 
-    print("=== Step Smoothing ===")
-    print(f"  filtered step (target=10): {out:.3f}")
+    logger.info("=== Step Smoothing ===")
+    logger.info("  filtered step (target=10): %.3f", out)
     assert 0.0 < out < 10.0
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_non_positive_dt_returns_raw_value():
@@ -46,11 +49,11 @@ def test_non_positive_dt_returns_raw_value():
     same_time = f(t=1.0, x=7.5)
     earlier = f(t=0.5, x=9.25)
 
-    print("=== Non-positive dt ===")
-    print(f"  same-time output: {same_time}, earlier-time output: {earlier}")
+    logger.info("=== Non-positive dt ===")
+    logger.info("  same-time output: %s, earlier-time output: %s", same_time, earlier)
     assert same_time == 7.5
     assert earlier == 9.25
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_alpha_formula_matches_reference():
@@ -61,10 +64,10 @@ def test_alpha_formula_matches_reference():
     cutoff = 2.0
     expected = 1.0 / (1.0 + (1.0 / (2 * math.pi * cutoff)) / te)
 
-    print("=== Alpha Formula ===")
-    print(f"  expected={expected:.6f}, actual={f._alpha(te, cutoff):.6f}")
+    logger.info("=== Alpha Formula ===")
+    logger.info("  expected=%.6f, actual=%.6f", expected, f._alpha(te, cutoff))
     assert abs(f._alpha(te, cutoff) - expected) < 1e-9
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_high_beta_tracks_fast_movement():
@@ -78,16 +81,17 @@ def test_high_beta_tracks_fast_movement():
         low_out = low_beta(t, x)
         high_out = high_beta(t, x)
 
-    print("=== Adaptive Tracking ===")
-    print(f"  low-beta final: {low_out:.3f}, high-beta final: {high_out:.3f}, target: 19.0")
+    logger.info("=== Adaptive Tracking ===")
+    logger.info("  low-beta final: %.3f, high-beta final: %.3f, target: 19.0", low_out, high_out)
     assert high_out > low_out
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     test_constant_signal_is_preserved()
     test_step_response_is_smoothed()
     test_non_positive_dt_returns_raw_value()
     test_alpha_formula_matches_reference()
     test_high_beta_tracks_fast_movement()
-    print("All tests passed!")
+    logger.info("All tests passed!")

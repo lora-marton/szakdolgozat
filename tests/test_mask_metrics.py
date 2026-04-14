@@ -6,6 +6,7 @@ comparison over synthetic binary blobs, and the optical-flow based
 frame-energy helper on small synthetic masks.
 """
 
+import logging
 import os
 import sys
 
@@ -16,6 +17,8 @@ import config_for_tests
 from config_for_tests import make_masks
 
 from model.comparison.mask_metrics import MaskMetrics
+
+logger = logging.getLogger(__name__)
 
 
 def _disk_mask(h: int, w: int, cy: int, cx: int, r: int) -> np.ndarray:
@@ -31,10 +34,10 @@ def test_dtm_one_direction_identical_shapes():
 
     score = MaskMetrics._dtm_one_direction(binary, binary, sigma=5.0)
 
-    print("=== DTM Identical ===")
-    print(f"  score: {score:.4f}")
+    logger.info("=== DTM Identical ===")
+    logger.info("  score: %.4f", score)
     assert abs(score - 1.0) < 1e-6
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_dtm_one_direction_disjoint_shapes():
@@ -45,10 +48,10 @@ def test_dtm_one_direction_disjoint_shapes():
 
     score = MaskMetrics._dtm_one_direction(reference, query, sigma=2.0)
 
-    print("=== DTM Disjoint ===")
-    print(f"  score: {score:.6f}")
+    logger.info("=== DTM Disjoint ===")
+    logger.info("  score: %.6f", score)
     assert score < 0.01
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_compare_shapes_dtm_identical_masks():
@@ -64,10 +67,10 @@ def test_compare_shapes_dtm_identical_masks():
         threshold=128,
     )
 
-    print("=== Compare Shapes Identical ===")
-    print(f"  mean_score: {mean_score}, per_frame min: {per_frame.min():.4f}")
+    logger.info("=== Compare Shapes Identical ===")
+    logger.info("  mean_score: %s, per_frame min: %.4f", mean_score, per_frame.min())
     assert mean_score >= 0.98
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_compare_shapes_dtm_both_empty_frames():
@@ -83,11 +86,11 @@ def test_compare_shapes_dtm_both_empty_frames():
         threshold=128,
     )
 
-    print("=== Compare Shapes Both Empty ===")
-    print(f"  mean_score: {mean_score}, per_frame: {per_frame.tolist()}")
+    logger.info("=== Compare Shapes Both Empty ===")
+    logger.info("  mean_score: %s, per_frame: %s", mean_score, per_frame.tolist())
     assert mean_score == 1.0
     assert np.allclose(per_frame, 1.0)
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_frame_energy_no_motion():
@@ -96,11 +99,11 @@ def test_frame_energy_no_motion():
 
     energy = MaskMetrics._compute_frame_energy(mask, mask, winsize=15, threshold=128)
 
-    print("=== Frame Energy Static ===")
-    print(f"  energy: {energy:.4f}")
+    logger.info("=== Frame Energy Static ===")
+    logger.info("  energy: %.4f", energy)
     assert energy >= 0.0
     assert energy < 0.5
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_frame_energy_shifted_mask():
@@ -111,10 +114,10 @@ def test_frame_energy_shifted_mask():
     static_energy = MaskMetrics._compute_frame_energy(prev, prev, winsize=15, threshold=128)
     shift_energy = MaskMetrics._compute_frame_energy(prev, curr, winsize=15, threshold=128)
 
-    print("=== Frame Energy Shifted ===")
-    print(f"  static: {static_energy:.4f}, shifted: {shift_energy:.4f}")
+    logger.info("=== Frame Energy Shifted ===")
+    logger.info("  static: %.4f, shifted: %.4f", static_energy, shift_energy)
     assert shift_energy > static_energy
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_compare_mask_energy_single_frame_fallback():
@@ -123,14 +126,15 @@ def test_compare_mask_energy_single_frame_fallback():
 
     result = MaskMetrics._compare_mask_energy(masks, masks, winsize=15, threshold=128)
 
-    print("=== Mask Energy Single Frame ===")
-    print(f"  result: {result}")
+    logger.info("=== Mask Energy Single Frame ===")
+    logger.info("  result: %s", result)
     assert result["energy_score"] == 1.0
     assert result["per_frame_ratios"].size == 0
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     test_dtm_one_direction_identical_shapes()
     test_dtm_one_direction_disjoint_shapes()
     test_compare_shapes_dtm_identical_masks()
@@ -138,4 +142,4 @@ if __name__ == "__main__":
     test_frame_energy_no_motion()
     test_frame_energy_shifted_mask()
     test_compare_mask_energy_single_frame_fallback()
-    print("All tests passed!")
+    logger.info("All tests passed!")

@@ -5,8 +5,12 @@ Extracts audio from both videos and computes the lag (in frames)
 between them so downstream steps can align the sequences.
 """
 
+import logging
+
 import numpy as np
 from scipy.signal import correlate, correlation_lags
+
+logger = logging.getLogger(__name__)
 
 
 class AudioSync:
@@ -40,7 +44,7 @@ class AudioSync:
         audio2 = AudioSync._load_audio_from_video(video2_path, sr=sr)
 
         if len(audio1) == 0 or len(audio2) == 0:
-            print("[AudioSync] WARNING: Could not extract audio. Assuming zero offset.")
+            logger.warning("Could not extract audio. Assuming zero offset.")
             return 0
 
         correlation = correlate(audio1, audio2, mode="full")
@@ -68,7 +72,7 @@ class AudioSync:
         Returns:
             1D numpy array of float32 audio samples.
         """
-        from moviepy import VideoFileClip
+        from moviepy import VideoFileClip  # type: ignore[import-untyped]
 
         clip = VideoFileClip(video_path)
 

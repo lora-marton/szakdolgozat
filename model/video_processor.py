@@ -6,6 +6,7 @@ rendering into a single async pipeline with real-time SSE status updates.
 """
 
 import asyncio
+import logging
 import os
 import traceback
 from typing import Awaitable, Callable
@@ -14,6 +15,8 @@ from model.comparison.comparator import Comparator
 from model.extraction.extractor import Extractor
 from model.feedback.feedback_generator import FeedbackGenerator
 from model.preprocessing.preprocessor import Preprocessor
+
+logger = logging.getLogger(__name__)
 
 
 class VideoProcessor:
@@ -42,7 +45,7 @@ class VideoProcessor:
         """
 
         async def send_status(msg: str) -> None:
-            print(msg)
+            logger.info(msg)
             if event_handler:
                 await event_handler(msg)
 

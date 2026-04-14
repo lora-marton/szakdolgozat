@@ -5,12 +5,14 @@ Coordinates text feedback generation, timeline marker extraction,
 and feedback video rendering into a single entry point.
 """
 
+import logging
 import os
 
 from model.config import DEFAULT_FEEDBACK_CONFIG
 from model.feedback.text_feedback import TextFeedback
 from model.feedback.video_feedback import VideoFeedback
 
+logger = logging.getLogger(__name__)
 
 class FeedbackGenerator:
     """Top-level feedback pipeline orchestrator."""
@@ -40,7 +42,7 @@ class FeedbackGenerator:
         if config is None:
             config = DEFAULT_FEEDBACK_CONFIG
 
-        print(f"Timing cost: {results['timing_cost']}")
+        logger.info("Timing cost: %s", results["timing_cost"])
 
         feedback = TextFeedback.generate_messages(results, config)
         timeline_markers = TextFeedback.extract_timeline_markers(results, config)

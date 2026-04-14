@@ -5,6 +5,7 @@ Drives the full compare_dances method with synthetic teacher/student
 data covering identical, distorted, and mismatched-trajectory cases.
 """
 
+import logging
 import os
 import sys
 
@@ -15,6 +16,8 @@ import config_for_tests
 from config_for_tests import make_masks, make_stick_figure_landmarks, make_trajectory
 
 from model.comparison.comparator import Comparator
+
+logger = logging.getLogger(__name__)
 
 EXPECTED_KEYS = {
     "overall_score",
@@ -50,10 +53,10 @@ def test_compare_returns_all_expected_keys():
 
     result = Comparator.compare_dances(teacher, student)
 
-    print("=== Compare Keys ===")
-    print(f"  keys: {sorted(result.keys())}")
+    logger.info("=== Compare Keys ===")
+    logger.info("  keys: %s", sorted(result.keys()))
     assert EXPECTED_KEYS.issubset(result.keys())
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_compare_identical_near_perfect_score():
@@ -63,17 +66,18 @@ def test_compare_identical_near_perfect_score():
 
     result = Comparator.compare_dances(teacher, student)
 
-    print("=== Compare Identical ===")
-    print(
-        f"  overall: {result['overall_score']}, "
-        f"skeleton: {result['skeleton_score']}, "
-        f"trajectory: {result['trajectory_score']}, "
-        f"mask: {result['mask_score']}"
+    logger.info("=== Compare Identical ===")
+    logger.info(
+        "  overall: %s, skeleton: %s, trajectory: %s, mask: %s",
+        result["overall_score"],
+        result["skeleton_score"],
+        result["trajectory_score"],
+        result["mask_score"],
     )
     assert result["overall_score"] >= 95.0
     assert result["skeleton_score"] >= 99.0
     assert result["trajectory_score"] >= 99.0
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_compare_distorted_student_drops_skeleton_score():
@@ -87,10 +91,10 @@ def test_compare_distorted_student_drops_skeleton_score():
 
     result = Comparator.compare_dances(teacher, student)
 
-    print("=== Compare Distorted ===")
-    print(f"  skeleton: {result['skeleton_score']}, overall: {result['overall_score']}")
+    logger.info("=== Compare Distorted ===")
+    logger.info("  skeleton: %s, overall: %s", result["skeleton_score"], result["overall_score"])
     assert result["skeleton_score"] < 95.0
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_compare_mirrored_trajectory_drops_trajectory_score():
@@ -104,11 +108,11 @@ def test_compare_mirrored_trajectory_drops_trajectory_score():
 
     result = Comparator.compare_dances(teacher, student)
 
-    print("=== Compare Mirrored Trajectory ===")
-    print(f"  trajectory: {result['trajectory_score']}, direction: {result['direction_similarity']}")
+    logger.info("=== Compare Mirrored Trajectory ===")
+    logger.info("  trajectory: %s, direction: %s", result["trajectory_score"], result["direction_similarity"])
     assert result["trajectory_score"] < 30.0
     assert result["direction_similarity"] < 0.2
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_compare_preserves_fps_metadata():
@@ -120,17 +124,18 @@ def test_compare_preserves_fps_metadata():
 
     result = Comparator.compare_dances(teacher, student)
 
-    print("=== Compare FPS ===")
-    print(f"  teacher_fps: {result['teacher_fps']}, student_fps: {result['student_fps']}")
+    logger.info("=== Compare FPS ===")
+    logger.info("  teacher_fps: %s, student_fps: %s", result["teacher_fps"], result["student_fps"])
     assert result["teacher_fps"] == 24.0
     assert result["student_fps"] == 48.0
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     test_compare_returns_all_expected_keys()
     test_compare_identical_near_perfect_score()
     test_compare_distorted_student_drops_skeleton_score()
     test_compare_mirrored_trajectory_drops_trajectory_score()
     test_compare_preserves_fps_metadata()
-    print("All tests passed!")
+    logger.info("All tests passed!")

@@ -5,6 +5,7 @@ Covers joint-angle computation, center-of-gravity computation, the
 per-joint and CoG scoring helpers, and the combined skeleton score.
 """
 
+import logging
 import os
 import sys
 
@@ -16,6 +17,8 @@ from config_for_tests import make_stick_figure_landmarks
 
 from model.comparison.skeleton_metrics import SkeletonMetrics
 from model.config import DEFAULT_COMPARISON_CONFIG
+
+logger = logging.getLogger(__name__)
 
 
 def _landmarks_with_positions(positions: dict, num_frames: int = 1) -> np.ndarray:
@@ -40,10 +43,10 @@ def test_joint_angles_right_angle():
 
     angles = SkeletonMetrics._compute_joint_angles(lm, ((0, 1, 2),))
 
-    print("=== Right Angle ===")
-    print(f"  angle: {angles[0, 0]:.2f}")
+    logger.info("=== Right Angle ===")
+    logger.info("  angle: %.2f", angles[0, 0])
     assert abs(angles[0, 0] - 90.0) < 1e-3
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_joint_angles_straight_line():
@@ -58,10 +61,10 @@ def test_joint_angles_straight_line():
 
     angles = SkeletonMetrics._compute_joint_angles(lm, ((0, 1, 2),))
 
-    print("=== Straight Line ===")
-    print(f"  angle: {angles[0, 0]:.2f}")
+    logger.info("=== Straight Line ===")
+    logger.info("  angle: %.2f", angles[0, 0])
     assert abs(angles[0, 0] - 180.0) < 1e-3
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_joint_angles_handle_degenerate_vector():
@@ -76,10 +79,10 @@ def test_joint_angles_handle_degenerate_vector():
 
     angles = SkeletonMetrics._compute_joint_angles(lm, ((0, 1, 2),))
 
-    print("=== Degenerate Vector ===")
-    print(f"  angle: {angles[0, 0]:.2f}")
+    logger.info("=== Degenerate Vector ===")
+    logger.info("  angle: %.2f", angles[0, 0])
     assert np.isfinite(angles[0, 0])
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_cog_weighted_average():
@@ -94,11 +97,11 @@ def test_cog_weighted_average():
 
     cog = SkeletonMetrics._compute_cog(lm, weights)
 
-    print("=== CoG Weighted Average ===")
-    print(f"  cog: {cog[0].tolist()}")
+    logger.info("=== CoG Weighted Average ===")
+    logger.info("  cog: %s", cog[0].tolist())
     assert abs(cog[0, 0] - 0.75) < 1e-6
     assert abs(cog[0, 1] - 0.0) < 1e-6
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_compare_cog_perfect_match():
@@ -107,10 +110,10 @@ def test_compare_cog_perfect_match():
 
     score = SkeletonMetrics._compare_cog(cog, cog, sigma=0.08)
 
-    print("=== CoG Perfect Match ===")
-    print(f"  score: {score}")
+    logger.info("=== CoG Perfect Match ===")
+    logger.info("  score: %s", score)
     assert score == 100.0
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_compare_cog_large_distance_drops_score():
@@ -120,10 +123,10 @@ def test_compare_cog_large_distance_drops_score():
 
     score = SkeletonMetrics._compare_cog(a, b, sigma=0.08)
 
-    print("=== CoG Far Apart ===")
-    print(f"  score: {score}")
+    logger.info("=== CoG Far Apart ===")
+    logger.info("  score: %s", score)
     assert score < 5.0
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_skeleton_score_identical_inputs():
@@ -132,12 +135,12 @@ def test_skeleton_score_identical_inputs():
 
     result = SkeletonMetrics.compute_skeleton_score(lm, lm, DEFAULT_COMPARISON_CONFIG)
 
-    print("=== Skeleton Identical ===")
-    print(f"  score: {result['score']}")
-    print(f"  per_joint: {result['per_joint_scores']}")
+    logger.info("=== Skeleton Identical ===")
+    logger.info("  score: %s", result["score"])
+    logger.info("  per_joint: %s", result["per_joint_scores"])
     assert result["score"] >= 99.0
     assert all(v >= 99.0 for v in result["per_joint_scores"].values())
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_skeleton_score_drops_with_distorted_student():
@@ -151,10 +154,10 @@ def test_skeleton_score_drops_with_distorted_student():
 
     result = SkeletonMetrics.compute_skeleton_score(teacher, student, DEFAULT_COMPARISON_CONFIG)
 
-    print("=== Skeleton Distorted ===")
-    print(f"  score: {result['score']}")
+    logger.info("=== Skeleton Distorted ===")
+    logger.info("  score: %s", result["score"])
     assert result["score"] < 99.0
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_skeleton_score_ignores_low_visibility():
@@ -163,13 +166,14 @@ def test_skeleton_score_ignores_low_visibility():
 
     result = SkeletonMetrics.compute_skeleton_score(lm, lm, DEFAULT_COMPARISON_CONFIG)
 
-    print("=== Skeleton Zero Visibility ===")
-    print(f"  score: {result['score']}, per_joint: {result['per_joint_scores']}")
+    logger.info("=== Skeleton Zero Visibility ===")
+    logger.info("  score: %s, per_joint: %s", result["score"], result["per_joint_scores"])
     assert all(v == 100.0 for v in result["per_joint_scores"].values())
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     test_joint_angles_right_angle()
     test_joint_angles_straight_line()
     test_joint_angles_handle_degenerate_vector()
@@ -179,4 +183,4 @@ if __name__ == "__main__":
     test_skeleton_score_identical_inputs()
     test_skeleton_score_drops_with_distorted_student()
     test_skeleton_score_ignores_low_visibility()
-    print("All tests passed!")
+    logger.info("All tests passed!")

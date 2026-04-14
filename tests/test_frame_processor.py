@@ -6,6 +6,7 @@ calibration) as well as the full process_frame pipeline using a fake
 MediaPipe-like landmark object and a small synthetic mask.
 """
 
+import logging
 import os
 import sys
 
@@ -16,6 +17,8 @@ import config_for_tests  # noqa: F401
 
 from model.config import DEFAULT_EXTRACTION_CONFIG
 from model.extraction.frame_processor import FrameProcessor
+
+logger = logging.getLogger(__name__)
 
 
 class FakeLandmark:
@@ -58,10 +61,10 @@ def test_get_hip_center_averages_hip_landmarks():
 
     center = fp._get_hip_center(lm, vid_w=100, vid_h=200)
 
-    print("=== Hip Center ===")
-    print(f"  center: {center.tolist()}")
+    logger.info("=== Hip Center ===")
+    logger.info("  center: %s", center.tolist())
     assert np.allclose(center, [50.0, 120.0])
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_get_torso_length_distance():
@@ -75,10 +78,10 @@ def test_get_torso_length_distance():
 
     length = fp._get_torso_length(lm, vid_w=100, vid_h=100)
 
-    print("=== Torso Length ===")
-    print(f"  length: {length}")
+    logger.info("=== Torso Length ===")
+    logger.info("  length: %s", length)
     assert abs(length - 30.0) < 1e-5
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_calibrate_if_needed_sets_scale_once():
@@ -96,11 +99,11 @@ def test_calibrate_if_needed_sets_scale_once():
     lm[11] = [0.4, 0.1, 0.0, 1.0]
     fp._calibrate_if_needed(lm, vid_w=100, vid_h=100)
 
-    print("=== Calibration ===")
-    print(f"  first_scale: {first_scale}, after second call: {fp.fixed_scale}")
+    logger.info("=== Calibration ===")
+    logger.info("  first_scale: %s, after second call: %s", first_scale, fp.fixed_scale)
     assert fp.fixed_scale == first_scale
     assert abs(first_scale - (DEFAULT_EXTRACTION_CONFIG.target_torso_px / 30.0)) < 1e-5
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_build_affine_matrix_shape_and_translation():
@@ -113,14 +116,14 @@ def test_build_affine_matrix_shape_and_translation():
 
     cx, cy = DEFAULT_EXTRACTION_CONFIG.norm_center
 
-    print("=== Affine Matrix ===")
-    print(f"  matrix:\n{affine}")
+    logger.info("=== Affine Matrix ===")
+    logger.info("  matrix:\n%s", affine)
     assert affine.shape == (2, 3)
     assert abs(affine[0, 0] - 2.0) < 1e-6
     assert abs(affine[1, 1] - 2.0) < 1e-6
     assert abs(affine[0, 2] - (cx - 50.0 * 2.0)) < 1e-5
     assert abs(affine[1, 2] - (cy - 40.0 * 2.0)) < 1e-5
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 def test_process_frame_end_to_end():
@@ -132,8 +135,8 @@ def test_process_frame_end_to_end():
     lm, norm_mask, traj = fp.process_frame(raw, mask, vid_w=640, vid_h=480, timestamp_ms=0.0)
     lm2, _, _ = fp.process_frame(raw, mask, vid_w=640, vid_h=480, timestamp_ms=16.0)
 
-    print("=== Process Frame End To End ===")
-    print(f"  lm shape: {lm.shape}, mask shape: {norm_mask.shape}, traj: {traj}")
+    logger.info("=== Process Frame End To End ===")
+    logger.info("  lm shape: %s, mask shape: %s, traj: %s", lm.shape, norm_mask.shape, traj)
     assert lm.shape == (33, 4)
     assert lm.dtype == np.float32
     assert norm_mask.shape == DEFAULT_EXTRACTION_CONFIG.target_mask_size
@@ -141,13 +144,14 @@ def test_process_frame_end_to_end():
     assert len(traj) == 2
     assert fp.fixed_scale is not None
     assert np.allclose(lm2[11, :2], lm[11, :2], atol=1e-3)
-    print("  PASSED\n")
+    logger.info("  PASSED\n")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     test_get_hip_center_averages_hip_landmarks()
     test_get_torso_length_distance()
     test_calibrate_if_needed_sets_scale_once()
     test_build_affine_matrix_shape_and_translation()
     test_process_frame_end_to_end()
-    print("All tests passed!")
+    logger.info("All tests passed!")
