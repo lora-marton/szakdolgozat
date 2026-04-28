@@ -6,6 +6,17 @@ $ProjectRoot = $PSScriptRoot
 
 Write-Host "=== Project setup ===" -ForegroundColor Cyan
 
+# --- Kill any process on port 8000 ---
+$portInUse = Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue
+if ($portInUse) {
+    $pids = $portInUse | Select-Object -ExpandProperty OwningProcess -Unique
+    foreach ($procId in $pids) {
+        Write-Host "Killing process $procId on port 8000..." -ForegroundColor Yellow
+        Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+    }
+    Write-Host "Port 8000 cleared." -ForegroundColor Green
+}
+
 # --- Backend: Python venv + dependencies ---
 $VenvPath = Join-Path $ProjectRoot ".venv"
 $VenvPython = Join-Path $VenvPath "Scripts\python.exe"
@@ -18,6 +29,15 @@ if (-not (Test-Path $VenvPython)) {
 Write-Host "Installing Python dependencies..." -ForegroundColor Yellow
 & $VenvPython -m pip install --upgrade pip
 & $VenvPython -m pip install -r (Join-Path $ProjectRoot "requirements.txt")
+
+# --- Download MediaPipe pose model if missing ---
+$ModelPath = Join-Path $ProjectRoot "model\pose_landmarker_heavy.task"
+if (-not (Test-Path $ModelPath)) {
+    Write-Host "Downloading pose_landmarker_heavy.task..." -ForegroundColor Yellow
+    $ModelUrl = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task"
+    Invoke-WebRequest -Uri $ModelUrl -OutFile $ModelPath
+    Write-Host "Model downloaded." -ForegroundColor Green
+}
 
 # --- Frontend: npm install ---
 $ViewPath = Join-Path $ProjectRoot "view"
