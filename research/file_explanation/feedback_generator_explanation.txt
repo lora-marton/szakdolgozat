@@ -1,0 +1,101 @@
+feedback_generator.py — Feedback Orchestrator
+===============================================
+
+This file is the single entry point for the entire feedback phase.
+It coordinates text feedback generation, timeline marker extraction,
+and feedback video rendering — three independent tasks that all consume
+the same comparison results dict.
+
+The file contains a single class (FeedbackGenerator) with one public
+static method (generate_feedback). No computation happens here — this
+is a thin orchestrator that delegates to TextFeedback and VideoFeedback.
+
+
+================================================================================
+generate_feedback — the pipeline
+================================================================================
+
+Input:
+  - results: flat dict returned by Comparator.compare_dances(), with
+    preprocess_info already injected by video_processor.
+  - teacher_video: path to the teacher video file.
+  - student_video: path to the student video file.
+  - output_dir: session directory containing HDF5 data and where the
+    feedback video will be saved.
+
+Output:
+  A dict with three keys:
+
+    Key                 Type            Source
+    ────────────────    ──────────────  ─────────────────────────────
+    feedback            list[str]       TextFeedback.generate_messages
+    timeline_markers    list[dict]      TextFeedback.extract_timeline_markers
+    feedback_video      str             VideoFeedback.render_video (basename)
+
+The three steps run sequentially:
+
+  0. Print the timing cost for server-side logging.
+
+  1. TextFeedback.generate_messages(results, config)
+     Produces the prioritised list of feedback strings (summary,
+     warnings, praise) based on scores and thresholds.
+
+  2. TextFeedback.extract_timeline_markers(results, config)
+     Converts worst_frames from the comparison results into
+     timestamped markers for the frontend video player.
+
+  3. VideoFeedback.render_video(teacher_video, student_video,
+                                output_dir, preprocess_info)
+     Generates the side-by-side MP4 with skeleton overlays. This is
+     the most expensive step — it reads both full videos, resamples
+     frames, renders composites, and re-encodes to H.264.
+
+  The video path returned by render_video is an absolute path, but the
+  return dict stores only the basename (os.path.basename). The caller
+  (video_processor) already knows the output_dir, so the basename is
+  sufficient and avoids leaking server-side absolute paths to the
+  frontend.
+
+
+================================================================================
+Why this file exists
+================================================================================
+
+  Before this orchestrator, video_processor.py made three separate
+  calls:
+
+    feedback = generate_messages(results)
+    markers = extract_timeline_markers(results)
+    video = generate_feedback_video(...)
+
+  This spread feedback logic across the processor, which is responsible
+  for the full pipeline (extraction, comparison, feedback). The
+  orchestrator consolidates these into a single call:
+
+    feedback_result = FeedbackGenerator.generate_feedback(
+        results, teacher_video, student_video, output_dir,
+    )
+
+  This mirrors the pattern used in the comparison phase, where
+  Comparator.compare_dances is a single entry point that delegates to
+  SkeletonMetrics, MaskMetrics, and TrajectoryMetrics.
+
+
+================================================================================
+Design Notes
+================================================================================
+
+  - Steps 1 and 2 (text feedback and timeline markers) are fast
+    (milliseconds). Step 3 (video rendering) is slow (seconds to
+    minutes depending on video length). The sequential ordering does
+    not matter for performance since the video render dominates.
+
+  - The orchestrator accepts an optional FeedbackConfig and passes it
+    to both TextFeedback.generate_messages and
+    TextFeedback.extract_timeline_markers. VideoFeedback.render_video
+    uses ExtractionConfig defaults internally.
+
+  - preprocess_info is extracted from results via results.get() rather
+    than being a separate parameter. This keeps the caller interface
+    simple — video_processor injects preprocess_info into the results
+    dict before calling generate_feedback.

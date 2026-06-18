@@ -1,0 +1,71 @@
+Feedback.tsx — SSE Orchestration and Results Display
+=====================================================
+
+Central component that connects to the backend's SSE endpoint, collects
+processing status messages, fetches results when done, and renders the
+three feedback sections (log, video, scores).
+
+
+================================================================================
+State and Refs
+================================================================================
+
+  messages      string[]                  Accumulated SSE status messages
+  results       FeedbackResponse | null   Full feedback data, null until ready
+  eventSource   ref to EventSource        Held in a ref for cleanup on unmount
+
+
+================================================================================
+useEffect — SSE Lifecycle
+================================================================================
+
+  Runs once on mount (empty dependency array). Steps:
+
+    1. connectToEvents() opens an EventSource to GET /events
+    2. onopen logs the connection
+    3. onmessage appends each status string to the messages array
+    4. When "Processing complete." arrives:
+       - Closes the SSE connection
+       - Calls getFeedback() to fetch the final results
+       - Stores the response in results state
+    5. onerror logs connection errors
+    6. Cleanup function closes the connection on component unmount
+
+  The SSE connection is one-directional — the backend pushes status
+  messages as it processes the videos. The component accumulates them
+  for display in SseMessages.
+
+
+================================================================================
+Layout
+================================================================================
+
+  Stack (vertical, centered, max 700px, auto horizontal margins):
+
+    1. SseMessages — always rendered (shows processing log)
+    2. VideoFeedback — conditional on results.feedback_video_url existing
+    3. ResultsPanel — conditional on results being non-null
+
+  The gap of 5 (40px) provides generous spacing between sections.
+  Components render progressively: first the log appears with live
+  updates, then the video and scores appear once processing completes.
+
+
+================================================================================
+Data Flow
+================================================================================
+
+  FileChooser (sendFiles)
+       │
+       ▼
+  Backend processes videos, pushes SSE messages
+       │
+       ▼
+  Feedback.tsx listens via EventSource
+       │
+       ├─ messages[] → SseMessages (live log)
+       │
+       └─ "Processing complete." triggers getFeedback()
+              │
+              ▼
+         results → VideoFeedback + ResultsPanel

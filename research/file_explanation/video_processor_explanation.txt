@@ -1,0 +1,130 @@
+video_processor.py — Pipeline Orchestrator
+============================================
+
+This file is the central orchestrator of the dance comparison pipeline.
+It ties the four processing phases together into a single async function
+and provides real-time status updates via Server-Sent Events.
+
+The file contains a single class (VideoProcessor) with one public static
+async method (process_videos). All actual computation is delegated to the
+phase-specific classes.
+
+
+================================================================================
+Imports
+================================================================================
+
+  Standard library:
+    - asyncio: Provides asyncio.to_thread() to offload CPU-heavy work to a
+      separate thread so the async event loop stays responsive for SSE updates.
+    - os: File system operations — checking if video files exist.
+    - traceback: Prints full stack traces on exception for debugging.
+    - Callable, Awaitable (from typing): Type hints for the event_handler
+      parameter.
+
+  Project imports:
+    - Comparator (from model.comparison.comparator): Phase 3 — runs DTW
+      alignment and computes skeleton, trajectory, and mask scores.
+    - Extractor (from model.extraction.extractor): Phase 1 — extracts pose
+      landmarks and segmentation masks using MediaPipe.
+    - FeedbackGenerator (from model.feedback.feedback_generator): Phase 4 —
+      generates text feedback, timeline markers, and the feedback video in
+      a single call.
+    - Preprocessor (from model.preprocessing.preprocessor): Phase 2 — loads
+      HDF5 data, applies audio sync offset, and trims to active range.
+
+
+================================================================================
+process_videos() — the pipeline
+================================================================================
+
+Signature:
+  async def process_videos(
+      teacher_file: str,
+      student_file: str,
+      output_dir: str = 'data',
+      event_handler: Callable[[str], Awaitable[None]] | None = None,
+  ) -> dict | None
+
+Parameters:
+  - teacher_file: Path to the reference/teacher dance video file.
+  - student_file: Path to the student's dance video file.
+  - output_dir: Directory where extracted data (HDF5), results (JSON), and
+    the feedback video (MP4) are stored.
+  - event_handler: Optional async callback for sending status messages. In
+    practice, this is the sse_status_handler from routes.py that puts
+    messages into the SSE queue.
+
+Returns:
+  dict | None — the full results dict on success, or None on failure.
+
+
+send_status() inner helper:
+  A closure that wraps status messaging. Always prints to the server
+  console, and if an event_handler was provided, also sends via SSE.
+
+
+File existence guard:
+  Checks that both video files exist before starting. If either is missing,
+  sends an error status and returns None.
+
+
+Phase 1 — Extraction:
+  Extractor.data_extraction(teacher_file, output_dir, 'teacher')
+  Extractor.data_extraction(student_file, output_dir, 'student')
+
+  Both run in asyncio.to_thread because MediaPipe pose detection is
+  CPU-heavy. The 'teacher'/'student' label determines output filenames
+  (teacher_data.h5, student_data.h5). Status updates sent after each.
+
+
+Phase 2 — Preprocessing:
+  teacher_data, student_data, preprocess_info = Preprocessor.preprocess(
+      output_dir, teacher_file, student_file,
+  )
+
+  Loads HDF5 data, runs audio cross-correlation to find the frame offset,
+  applies the offset, detects active dance range via motion energy, and
+  trims both sequences to their shared active region. Returns the trimmed
+  data dicts and a preprocess_info dict with offset metadata.
+
+  Runs in asyncio.to_thread because audio extraction is CPU-heavy.
+
+
+Phase 3 — Comparison:
+  results = Comparator.compare_dances(teacher_data, student_data)
+  results['preprocess_info'] = preprocess_info
+
+  Takes the preprocessed data dicts and runs DTW alignment, then skeleton,
+  mask, and trajectory comparison. Returns the flat results dict with all
+  scores. The preprocess_info is injected into results so downstream
+  feedback code can access audio offset and frame trim information.
+
+  Runs in asyncio.to_thread because comparison (especially mask DTM and
+  optical flow) is CPU-heavy. Overall score is sent via SSE immediately.
+
+
+Phase 4 — Feedback:
+  feedback_result = FeedbackGenerator.generate_feedback(
+      results, teacher_file, student_file, output_dir,
+  )
+  results.update(feedback_result)
+
+  A single call that internally runs TextFeedback.generate_messages,
+  TextFeedback.extract_timeline_markers, and VideoFeedback.render_video.
+  Returns a dict with 'feedback', 'timeline_markers', and 'feedback_video'
+  which are merged into the results dict.
+
+  Runs in asyncio.to_thread because video rendering is the most CPU-heavy
+  step in the entire pipeline.
+
+
+Return:
+  The fully enriched results dict containing all scores, per-joint data,
+  feedback messages, timeline markers, and the video filename.
+
+
+Error handling:
+  Catches any exception from any phase. Prints the full stack trace for
+  debugging, sends a user-friendly error message via SSE, and returns None
+  (which routes.py interprets as a 500 HTTP error).

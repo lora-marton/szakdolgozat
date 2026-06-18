@@ -1,0 +1,65 @@
+Here is the line-by-line explanation of 
+extractor5.py
+:
+
+Imports
+
+1-6: Imports standard libraries (cv2, numpy, h5py) and MediaPipe components for pose estimation.
+7: Imports the custom 
+OneEuroFilter
+ class we created for smoothing.
+Configuration
+
+10-13: Sets paths for the model, input video, output HDF5 file, and the Target FPS (30.0) for resampling.
+Initialization
+
+16-19: Creates aliases for MediaPipe classes to make the code cleaner.
+21-26: Configures the Pose Landmarker options (video mode, high confidence thresholds to reduce noise).
+Helper Function: get_hip_center
+
+28-39: Calculates the midpoint between Left Hip (23) and Right Hip (24). This (x, y, z) point becomes the "origin" (0,0,0) for our hip-centric dataset.
+Main Function: process_video
+
+42: Creates a dictionary to hold the One-Euro filters (one for each coordinate).
+46-48: Initializes empty lists to store the final data (collected_raw for normalized screen coords, collected_centered for hip-relative coords).
+50-51: Opens the video file.
+52-53: Gets the real FPS of the video and calculates how many milliseconds should pass between each target frame (e.g., 33.3ms for 30FPS).
+57-58: Variables to track the "virtual time" of our resampled 30FPS timeline.
+The Loop (Resampling Logic)
+
+60-63: Reads the next frame.
+67-68: Calculates the exact timestamp of the current frame in milliseconds.
+85-89: The Resampling Check. It compares the current frame's timestamp to the next target timestamp.
+If the current frame is too early (smaller than the target time), it continues (skips) to the next frame.
+Once we find a frame that meets the target time, we update last_processed_time and proceed to process it. This forces the loop to run at exactly 30FPS "speed", dropping extra frames if the video is 60FPS.
+Processing
+
+92-93: Converts the image to RGB (required by MediaPipe).
+95: Runs the AI pose detection.
+98-99: Creates empty arrays of zeros (33 points, 4 values each) to hold the data for this frame.
+101: Checks if a body was found.
+109-126 (Filtering Loop):
+Iterates through all 33 landmarks.
+If filters don't exist yet for this point, it creates them (tuned beta=10.0 for responsiveness).
+Applies the filter to x, y, AND z.
+Saves the filtered [x, y, z, visibility] into frame_raw.
+129-141 (Centering Logic):
+Calls 
+get_hip_center
+ using the filtered landmarks.
+Subtracts this center (cx, cy, cz) from every landmark's coordinates.
+Saves the result into frame_centered.
+143-144: Appends the completed frame data to our big lists.
+Visualization (Debug)
+
+148: Creates a black image (vis_frame).
+149-160: Draws the centered skeleton. It adds w // 2 to coordinates so the skeleton appears in the middle of the black screen, proving the hip-centering math worked.
+161: Shows the debug window.
+Saving
+
+171: Opens the HDF5 file in 'write' mode.
+173-180: Converts the lists to NumPy arrays (float32 for efficiency) and saves them as datasets named "raw" and "centered". Adds metadata attributes describing the columns.
+183: Saves global metadata like the FPS.
+Execution
+
+188-189: Standard Python check to run the function if the script is executed directly.

@@ -1,0 +1,64 @@
+services.py — Session Data Services
+======================================
+
+This file contains all data-access and persistence logic for dance
+comparison sessions: saving results to JSON, finding sessions on disk,
+loading results, and generating SSE events.
+
+The file contains a single class (SessionService) with three static
+methods. No instance state — all methods are pure functions that
+operate on the filesystem and the arguments they receive.
+
+
+================================================================================
+Module-Level Constants
+================================================================================
+
+  DATA_DIR
+    Absolute path to the data/ directory at the project root. Computed
+    from __file__ so it works regardless of the working directory.
+    Used by all methods that interact with session directories.
+
+
+================================================================================
+SessionService Methods
+================================================================================
+
+save_results(session_id, results) -> None
+─────────────────────────────────────────
+
+  Persists the comparison results dict to disk as results.json inside
+  the session directory.
+
+  The results dict may contain numpy arrays (from the comparison phase),
+  which are not JSON-serializable. The method walks the dict and converts:
+    - Top-level numpy arrays → .tolist()
+    - Numpy arrays nested one level inside dicts → .tolist()
+    - Everything else → kept as-is
+
+  This handles the actual results structure (e.g. energy_details is a
+  dict containing numpy arrays). Deeper nesting is not needed because
+  the pipeline doesn't produce it.
+
+  The numpy import is at the top of the file since it's always needed
+  when this module is imported.
+
+
+find_latest_session() -> str | None
+────────────────────────────────────
+
+  Lists all directories inside data/, sorts them reverse-alphabetically,
+  and returns the first one. Since session IDs are YYYYMMDD_HHMMSS
+  timestamps, reverse-alphabetical order equals newest-first.
+
+  Returns None if data/ doesn't exist or contains no session directories.
+  Used by the feedback endpoints when no session_id query parameter is
+  provided.
+
+
+load_results(session_id) -> dict | None
+────────────────────────────────────────
+
+  Reads and parses results.json from a session directory. Returns the
+  parsed dict, or None if the file doesn't exist. The caller (routes.py)
+  handles the None case by raising HTTP 404.

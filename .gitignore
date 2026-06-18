@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+env/
+.venv/
+.env
+
+# Distribution / Build
+build/
+dist/
+*.egg-info/
+
+# IDE settings
+.vscode/
+.idea/
+
+# Large Model Files
+*.pt
+*.pth
+*.task
+*.tflite
+*.onnx
+
+# Data & Output
+data/
+uploaded_videos/
+*.h5
+*.mp4
+*.avi
+*.mov
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,5 @@
+SSE = Server-Sent Events
+It's a browser-native mechanism where the server keeps an HTTP connection open and pushes text messages to the client in real time. Your 
+
+Feedback.tsx
+ already uses it — it connects to GET /events and receives status updates like "Processing videos..." as they happen. Unlike WebSockets, SSE is one-directional (server → client only), which is perfect for progress updates.

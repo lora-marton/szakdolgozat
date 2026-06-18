@@ -1,0 +1,26 @@
+When you run the demo, you will see two graphs stacked on top of each other. Here is what they represent:
+
+1. Top Graph: "Before Alignment (Raw Mismatch)"
+
+- What you see: A Blue Line (Teacher) and a Red Dashed Line (Student).
+- The Problem: The Red line is "slower" (stretched out) and starts a bit late.
+- The Result: Even though the shapes look similar, the peaks simply don't line up. If you calculated the distance vertically (frame-by-frame), the error would be huge, falsely suggesting the student is wrong.
+
+
+2. Bottom Graph: "DTW Alignment (Elastic Matching)"
+
+- What you see: The same two lines, but now connected by Gray Lines.
+- The Magic: Notice how the gray lines are slanted.
+	A peak in the Blue line is connected to the corresponding peak in the Red line, even though it happens later in time.
+	DTW has found the "Elastic Path" to map one signal to the other.
+
+
+Why this matters for your project:
+
+The Cost (printed in the console) is the true difference in moves.
+
+- Low Cost: "Great move! You just did it a bit slower." (Good Shape, Bad Timing).
+- High Cost: "Wrong move completely." (Bad Shape).
+
+
+By separating the Warping Path (Timing) from the path Cost (Shape), you can give the user specific feedback like "Right moves, but try to keep up with the beat!"

@@ -1,0 +1,263 @@
+video_feedback.py — Side-by-Side Skeleton Feedback Video Renderer
+==================================================================
+
+This file generates a side-by-side MP4 video showing the teacher (left)
+and student (right) with skeleton overlays. It uses only the audio sync
+offset to align the two videos — no DTW warping — so the viewer can see
+timing differences between the dancers.
+
+The file contains a single class (VideoFeedback) with one public static
+method (render_video) and eight private helpers, ordered by their call
+sequence in the pipeline.
+
+
+================================================================================
+render_video — the pipeline
+================================================================================
+
+Input:
+  - teacher_video: path to the teacher video file
+  - student_video: path to the student video file
+  - output_dir: session directory containing HDF5 landmark data
+  - preprocess_info: dict with 'audio_offset' (default 0 if None)
+  - config: ExtractionConfig instance (optional)
+
+Output:
+  Path to the generated MP4 file (H.264 encoded for browser playback).
+
+The pipeline has six steps:
+
+  1. Load landmarks from HDF5 files
+  2. Read and resample video frames to target FPS
+  3. Apply audio offset trimming
+  4. Compute output dimensions
+  5. Render composited frames with skeleton overlays
+  6. Re-encode to H.264
+
+Each step is delegated to a private helper. The orchestrator manages the
+flow and frees memory (del teacher_frames / student_frames) after
+rendering, since the frame lists can be very large.
+
+
+================================================================================
+Private Helpers — in call order
+================================================================================
+
+_load_landmarks(output_dir, label) -> np.ndarray
+────────────────────────────────────────────────
+
+  Loads the 'raw' dataset from '{label}_data.h5'. Returns an array of
+  shape (N, 33, 4) where each landmark has [x, y, z, visibility].
+  These are the same raw landmarks saved by the extractor — normalized
+  0-1 coordinates.
+
+
+_read_resampled_frames(video_path, target_fps) -> tuple[list, float]
+────────────────────────────────────────────────────────────────────
+
+  Reads all frames from a video file, applying the same FPS resampling
+  logic as the extractor. This is critical for frame-landmark alignment:
+  the extractor processes frames at target_fps intervals, so the video
+  renderer must select the exact same frames.
+
+  The resampling algorithm:
+    frame_interval_ms = 1000.0 / target_fps
+    last_processed_time = -frame_interval_ms
+
+    for each frame:
+        timestamp_ms = (frame_idx * 1000.0) / source_fps
+        if timestamp_ms < last_processed_time + frame_interval_ms - tolerance:
+            skip
+        last_processed_time += frame_interval_ms
+        keep frame
+
+  The tolerance (half a source frame duration) prevents off-by-one
+  errors from floating point timestamp comparisons. This matches the
+  extractor's FrameProcessor._should_process_frame logic exactly.
+
+  Returns: (list of BGR frames, source FPS as float)
+
+
+_apply_audio_offset(teacher_frames, teacher_lm, student_frames, student_lm,
+                    audio_offset, target_fps, source_fps)
+──────────────────────────────────────────────────────────────────────────────
+
+  Trims leading frames from one video based on the audio sync offset.
+
+  The audio_offset is in target_fps units (from the preprocessor's
+  audio cross-correlation). To convert to resampled-frame count:
+
+    scale = source_fps / target_fps
+    trim_frames = round(abs(audio_offset) * scale)
+
+  If audio_offset > 0: teacher starts first, so trim teacher frames.
+  If audio_offset < 0: student starts first, so trim student frames.
+
+  Both the frame list and landmark array are trimmed in parallel.
+  After trimming, num_frames = min(len(teacher), len(student)) ensures
+  both sides have equal length.
+
+  Returns: (teacher_frames, teacher_lm, student_frames, student_lm,
+            num_frames)
+
+
+_compute_output_dimensions(teacher_frame, student_frame) -> dict
+────────────────────────────────────────────────────────────────
+
+  Calculates the side-by-side layout dimensions, capped at 720p height.
+
+  Takes the first frame from each video and computes:
+    common_h = min(teacher_height, student_height, 720)
+    new_t_w = teacher_width * (common_h / teacher_height)
+    new_s_w = student_width * (common_h / student_height)
+    out_w = new_t_w + new_s_w
+    out_h = common_h
+
+  The 720p cap keeps the output file size manageable. Both videos are
+  scaled to the same height while preserving their aspect ratios, so
+  the output width depends on both input aspect ratios.
+
+  Returns a dict with all dimension values needed by _render_frames.
+
+
+_render_frames(teacher_frames, student_frames, teacher_lm, student_lm,
+               connections, dimensions, num_frames, output_fps, temp_path)
+─────────────────────────────────────────────────────────────────────────
+
+  The main compositing loop. For each frame:
+
+    1. Copy both frames (to avoid modifying originals)
+
+    2. Draw teacher skeleton on teacher frame (cyan/yellow):
+         _draw_skeleton(teacher_frame, teacher_lm[i], ...)
+
+    3. Draw student skeleton on student frame (green):
+         _draw_skeleton(student_frame, student_lm[i], ...)
+
+    4. Draw teacher ghost skeleton on student frame (yellow, thinner):
+         _draw_skeleton(student_frame, teacher_lm[i], ...)
+       This overlay lets the viewer directly compare the teacher's
+       pose against the student's body. The ghost uses the same color
+       as the teacher skeleton but with thinner lines (3px vs 5px) and
+       smaller points (5px vs 7px).
+
+    5. Resize both frames to the output dimensions
+
+    6. Draw labels ("Teacher" / "Student") on the resized frames
+
+    7. Horizontally stack and write to the video file
+
+  Uses cv2.VideoWriter with mp4v codec. The mp4v output is a temporary
+  file that gets re-encoded to H.264 afterward.
+
+  Progress is printed every 100 frames.
+
+
+_draw_skeleton(frame, landmarks, connections, vid_w, vid_h, ...)
+────────────────────────────────────────────────────────────────
+
+  Draws a pose skeleton on a BGR frame using normalized 0-1 landmarks.
+
+  For each connection (pair of landmark indices):
+    - Check visibility of both endpoints (threshold > 0.5)
+    - Denormalize: pixel_x = landmark_x * vid_w, pixel_y = landmark_y * vid_h
+    - Draw a line between the two points (cv2.line with LINE_AA)
+
+  Then for each of the 33 landmarks:
+    - Check visibility
+    - Draw a filled circle at the denormalized position
+
+  Parameters allow customizing colors and sizes for different overlays
+  (teacher vs student vs ghost).
+
+
+_draw_label(frame, text)
+────────────────────────
+
+  Draws a semi-transparent label bar at the top of a frame:
+    1. Copy the frame
+    2. Draw a black filled rectangle on the copy (0, 0) to (width, 36)
+    3. Blend: cv2.addWeighted(overlay, 0.5, frame, 0.5, 0, frame)
+    4. Draw white text on top
+
+  The 50% opacity keeps the label readable without fully obscuring the
+  video content behind it.
+
+
+_reencode_to_h264(input_path, output_path) -> str
+─────────────────────────────────────────────────
+
+  Re-encodes the mp4v temporary file to H.264 for browser compatibility.
+  Most browsers cannot play mp4v-encoded files natively but support
+  H.264 universally.
+
+  Uses ffmpeg via the imageio-ffmpeg package, which bundles a
+  pre-compiled ffmpeg binary. The import is lazy (inside the method)
+  for graceful degradation — if imageio-ffmpeg is not installed, the
+  method logs a warning and returns the mp4v file as-is.
+
+  ffmpeg flags:
+    -y              overwrite output without asking
+    -c:v libx264    H.264 video codec
+    -preset fast    encoding speed/quality tradeoff
+    -pix_fmt yuv420p  pixel format for maximum compatibility
+    -movflags +faststart  move metadata to file start for streaming
+
+  If ffmpeg fails (e.g. libx264 not available), the mp4v file is
+  renamed to the output path as a fallback. Either way, the method
+  always returns a valid file path.
+
+
+================================================================================
+Why no DTW in the video?
+================================================================================
+
+  The comparison pipeline uses DTW to warp frames for scoring, but the
+  feedback video deliberately does NOT apply DTW. Reasons:
+
+    1. DTW would hide timing errors. If the student is consistently
+       late, DTW would stretch their frames to match the teacher,
+       making the timing look correct. The whole point of the
+       side-by-side video is to show raw timing differences.
+
+    2. Frame warping creates visual artifacts. Repeating or skipping
+       video frames to match DTW alignment produces stuttery playback.
+
+    3. The audio offset is sufficient for rough sync. Both videos
+       started at different times (different button presses), so the
+       audio cross-correlation aligns them to the same musical beat.
+       After that, any remaining offset IS the timing error we want
+       the student to see.
+
+
+================================================================================
+Configuration Dependencies
+================================================================================
+
+  ExtractionConfig fields used:
+    - pose_connections    — skeleton drawing
+    - target_fps          — frame resampling and offset conversion
+    - output_fps          — video writer framerate
+
+
+================================================================================
+Design Notes
+================================================================================
+
+  - Print statements are intentionally kept throughout the pipeline.
+    This file processes potentially thousands of frames and the prints
+    serve as progress indicators during long renders.
+
+  - Memory management: teacher_frames and student_frames are deleted
+    immediately after _render_frames completes. Each list holds
+    hundreds of full-resolution BGR frames (potentially gigabytes).
+
+  - The ghost skeleton on the student side uses the teacher's
+    landmarks mapped to the student frame's pixel coordinates. This
+    works because all landmarks are normalized 0-1, so they can be
+    drawn on any frame regardless of resolution.
+
+  - The resampling logic in _read_resampled_frames must exactly match
+    the extractor's frame selection. If these diverge, skeleton
+    overlays will be misaligned with the video frames (e.g. the
+    skeleton from frame 10 drawn on the video's frame 11).

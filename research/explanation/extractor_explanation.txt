@@ -1,0 +1,159 @@
+Overview
+
+data_extraction() takes a single dance video and produces two outputs:
+
+- Keypoint data (33 body landmarks per frame) → {label}_data.h5
+- Segmentation masks (256×256 silhouettes per frame) → {label}_masks.h5
+
+The key innovation is the "Follow-Cam" normalization strategy — it removes the dancer's position in the frame while preserving their body proportions and depth.
+
+
+
+
+Configuration (lines 10–34)
+
+<model_path = 'model/pose_landmarker_heavy.task'
+TARGET_FPS = 60.0
+TARGET_TORSO_PX = 40.0
+TARGET_MASK_SIZE = (256, 256)
+NORM_CENTER = (128, 128)>
+
+- pose_landmarker_heavy.task — MediaPipe's most accurate pose model (33 landmarks + segmentation)
+- TARGET_FPS = 60 — all videos are resampled to 60 FPS regardless of source framerate, so teacher and student data are time-comparable
+- TARGET_TORSO_PX = 40 — the torso (shoulder-to-hip) should be 40 pixels in the normalized 256×256 space. This is intentionally small so the dancer fits even with arms fully extended
+- NORM_CENTER = (128, 128) — hip center is always placed at the middle of the 256×256 mask
+
+The PoseLandmarker is configured with high confidence thresholds (0.8 for detection, presence, and tracking) to reduce false positives.
+
+
+
+
+get_torso_stats() (lines 35–47)
+
+<def get_torso_stats(landmarks, image_width, image_height):>
+
+A helper that calculates:
+
+- Mid-hip point — average of left hip (landmark 23) and right hip (landmark 24)
+- Mid-shoulder point — average of left shoulder (11) and right shoulder (12)
+- Torso length — Euclidean distance between mid-shoulder and mid-hip, in pixels
+
+This torso length is the ruler used to normalize scale — it's a stable body measure that doesn't change with arm/leg movements.
+
+
+
+
+Frame Loop (lines 60–203)
+
+
+A. FPS Resampling (lines 60–83)
+
+The video might be 30fps, 24fps, etc. The code reads every frame but only processes frames at 60fps intervals:
+
+<if timestamp_ms < last_processed_time + frame_interval_ms - tolerance:
+    continue  # skip this frame>
+
+This ensures consistent timing regardless of source framerate.
+
+
+B. MediaPipe Detection (lines 88–92)
+
+Each frame is converted to RGB, wrapped in a mp.Image, and passed to the landmarker in VIDEO mode (which uses temporal tracking across frames):
+
+<result = landmarker.detect_for_video(mp_image, int(timestamp_ms))>
+
+Returns 33 pose landmarks + a segmentation mask per frame.
+
+
+C. One Euro Filtering (lines 104–127)
+
+Raw landmarks jitter frame-to-frame. The One Euro Filter is an adaptive low-pass filter that:
+
+- Smooths slow movements (reduces jitter when the dancer is still)
+- Preserves fast movements (reduces lag during quick gestures)
+
+Each landmark's x, y, z gets its own filter instance. The params min_cutoff=1.0, beta=20.0 mean fairly aggressive smoothing with good responsiveness.
+
+<sx = filters[i][0](<current_time_sec, lm.x>)  # filtered x
+sy = filters[i][1](<current_time_sec, lm.y>)  # filtered y
+sz = filters[i][2](<current_time_sec, lm.z>)  # filtered z>
+
+The filtered values are stored in frame_raw[i] = [sx, sy, sz, visibility].
+
+
+D. Scale Calibration — Frame 0 Only (lines 129–135)
+
+On the first frame where a pose is detected, the torso length is measured and a fixed_scale_factor is computed:
+
+<fixed_scale_factor = TARGET_TORSO_PX / current_torso_len>
+
+This factor never changes for the rest of the video. Why? If the dancer moves toward/away from the camera, the torso appears larger/smaller. By keeping scale fixed, you preserve that depth information — a dancer closer to the camera will appear bigger in the normalized space, which is correct.
+
+
+E. Follow-Cam Transform — Every Frame (lines 137–150)
+
+Each frame, the hip center is re-centered to (128, 128) in the 256×256 space:
+
+<tx = NORM_CENTER[0] - (current_hip_center[0] * fixed_scale_factor)
+ty = NORM_CENTER[1] - (current_hip_center[1] * fixed_scale_factor)>
+
+This creates an affine transformation matrix that:
+
+- Translates the dancer so their hips are always centered (removes position)
+- Uses the fixed scale (preserves depth)
+- Does NOT rotate (preserves orientation)
+
+Think of it like a camera that follows the dancer's hips but doesn't zoom in/out.
+
+
+F. Mask Processing (lines 152–164)
+
+The raw segmentation mask (dancer silhouette) from MediaPipe is warped with the same affine transform:
+
+<norm_mask_vis = cv2.warpAffine(segmentation_mask, affine_matrix, (256, 256))>
+
+This produces a normalized silhouette — always centered, always the same scale. These masks are what would be compared between teacher and student.
+
+
+G. Trajectory / GPS (lines 144–145)
+
+The original hip position (before normalization) is saved as "trajectory" — this is the dancer's global position on stage:
+
+<current_trajectory = [current_hip_center[0], current_hip_center[1]]>
+
+This lets you later analyze things like "the student was in the wrong part of the stage" separately from "the student's pose was wrong."
+
+
+
+
+Saving (lines 208–231)
+
+
+Two HDF5 files are written:
+
+{label}_data.h5:
+
+Dataset			Shape		Description
+raw			(N, 33, 4)	Filtered landmarks (x, y, z, visibility) per frame
+trajectory		(N, 2)		Hip center in original pixel coords
+Attrs: fps		scalar		Always 60.0
+Attrs: fixed_scale	scalar		The calibration scale factor
+
+
+{label}_masks.h5:
+
+Dataset	Shape		Description
+masks	(N, 256, 256)	Normalized silhouette masks, gzip compressed
+
+
+
+
+Summary — What This Design Enables
+
+The output is comparison-ready:
+
+- Both teacher and student have the same FPS (60)
+- Both have the same spatial normalization (hips centered, fixed scale)
+- Pose shape can be compared via the landmarks or masks
+- Timing can be compared via DTW on the frame sequences
+- Stage position can be compared via the trajectory data

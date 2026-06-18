@@ -1,0 +1,61 @@
+FileChooser.tsx — Video Upload Orchestrator
+=============================================
+
+Parent component that manages the two video file selections (teacher and
+student) and submits them to the backend. It owns the file state and
+delegates the visual upload UI to two Uploader child components.
+
+
+================================================================================
+State
+================================================================================
+
+  teacherFile   File | null   Selected teacher video, starts null
+  studentFile   File | null   Selected student video, starts null
+
+  The setter functions (setTeacherFile, setStudentFile) are passed down
+  to the Uploader children as the fileSetter prop. When a user picks a
+  file in either Uploader, the corresponding state updates here.
+
+
+================================================================================
+handleSubmit
+================================================================================
+
+  Fires on the Submit button click. Guards with a null check on both
+  files — only calls sendFiles() when both are selected. Logs filenames
+  to the console for debugging.
+
+  The sendFiles() promise is not awaited or handled because the upload
+  response is not used. The app relies on SSE (via Feedback.tsx) for
+  progress updates and getFeedback() for the final results.
+
+
+================================================================================
+Layout
+================================================================================
+
+  Grid container with responsive columns:
+
+    xs: 12 (stacked)    md: 6 (side by side)
+    ┌────────────┐      ┌──────┬──────┐
+    │  Teacher   │      │Teach.│Stud. │
+    │  Student   │      ├──────┴──────┤
+    │  [Submit]  │      │  [Submit]   │
+    └────────────┘      └─────────────┘
+
+  The Submit button sits in a centered Grid item spanning 8 columns on
+  desktop. It uses the contained variant for visual prominence.
+
+
+================================================================================
+Relationship to Uploader
+================================================================================
+
+  FileChooser is the state owner. Uploader is the presentation layer.
+  Each Uploader receives:
+    - person: label string ("Teacher" or "Student")
+    - fileSetter: callback to push the selected File up to FileChooser
+
+  This separation means Uploader is reusable — it knows nothing about
+  teacher/student semantics or the submission logic.

@@ -1,0 +1,209 @@
+extractor.py — Line-by-Line Explanation
+=========================================
+
+This file is the extraction orchestrator. It opens a dance video, runs
+MediaPipe pose detection frame by frame, delegates per-frame processing
+(filtering, normalization) to FrameProcessor, collects the results, and
+saves them as HDF5 files. Its role is analogous to video_processor.py and
+preprocessor.py — it coordinates the "what" and delegates the "how".
+
+
+Lines 1–7: Module Docstring
+-----------------------------
+Describes the file as the orchestrator that ties together video reading,
+MediaPipe detection, FrameProcessor delegation, and HDF5 saving.
+
+
+Lines 8–13: Imports (Standard + Third-Party)
+----------------------------------------------
+- os: File system operations — creating the output directory, building
+  HDF5 file paths.
+- cv2 (OpenCV): Opens the video file (VideoCapture), reads frames,
+  converts BGR to RGB for MediaPipe, and handles debug display windows.
+- h5py: HDF5 file I/O — saves extracted landmarks, trajectory, and
+  compressed segmentation masks.
+- mediapipe (as mp): Google's pose estimation library. Creates a
+  PoseLandmarker from config options and runs detection on each frame.
+- numpy (as np): Array conversion for HDF5 datasets (list → np.array).
+
+
+Lines 15–18: Project Imports
+------------------------------
+- DEFAULT_EXTRACTION_CONFIG (from model.config): The default ExtractionConfig
+  instance used when no config is passed.
+- ExtractionConfig (from model.config.extraction_config): The type itself,
+  used in the type annotation for the config parameter.
+- FrameProcessor (from model.extraction.frame_processor): The per-frame
+  processing class that handles filtering, calibration, and normalization.
+  Created once per extraction and reused for every frame.
+- Visualization (from model.extraction.visualization): Debug-only class
+  with draw_skeleton and draw_mask_overlay static methods for the OpenCV
+  preview windows.
+
+
+Lines 21–22: Extractor Class
+-------------------------------
+- A class that groups the extraction logic as static methods.
+- Contains no instance state — the stateful work is delegated to
+  FrameProcessor.
+
+
+Lines 24–31: data_extraction() Signature
+-------------------------------------------
+- @staticmethod: Called as Extractor.data_extraction().
+- Parameters:
+    - video_path (str): Path to the input dance video file.
+    - output_dir (str): Directory for the output HDF5 files. Defaults to
+      'data'. Created if it doesn't exist.
+    - label (str): Prefix for output filenames. 'teacher' produces
+      teacher_data.h5 and teacher_masks.h5. Defaults to 'dance'.
+    - debug (bool): If True, opens OpenCV windows showing the skeleton
+      overlay and the follow-cam normalized mask in real time.
+    - status_callback (object | None): Optional function called with
+      progress messages (e.g. "Processing frame 120..."). Used by
+      VideoProcessor to forward status to the frontend via SSE.
+    - config (ExtractionConfig | None): All extraction parameters. If
+      None, DEFAULT_EXTRACTION_CONFIG is used.
+- Returns: None — results are saved to disk as HDF5 files.
+
+
+Lines 44–49: Setup
+--------------------
+- Falls back to DEFAULT_EXTRACTION_CONFIG if no config was passed.
+- Creates the output directory if it doesn't exist.
+- Creates a FrameProcessor instance — this is the stateful object that
+  will handle filtering and normalization for every frame. The config is
+  passed in so the processor knows the filter params, target sizes, etc.
+- Creates MediaPipe landmarker options from the config (model path,
+  confidence thresholds, segmentation mask output enabled).
+
+
+Lines 51–53: Collection Lists
+-------------------------------
+- Three empty lists that accumulate results frame by frame:
+  - collected_raw: Filtered landmark arrays of shape (33, 4).
+  - collected_masks: Normalized segmentation masks (uint8).
+  - collected_trajectory: Hip center [x, y] positions in original pixels.
+  After the video loop, these are converted to numpy arrays and saved.
+
+
+Lines 55–63: Video Setup
+---------------------------
+- Opens the video with OpenCV's VideoCapture.
+- Reads source properties: frame rate, width, height.
+- Computes frame_interval_ms — the target time between frames based on
+  config.target_fps (default 60.0). For example, at 60 FPS the interval
+  is 16.67ms.
+- last_processed_time starts at -frame_interval_ms so the very first
+  frame is always processed.
+- Prints the source and target FPS for logging.
+
+
+Lines 65–74: Frame Loop and FPS Resampling
+--------------------------------------------
+- Reads frames one by one until the video ends or 'q' is pressed (debug).
+- frame_idx is the 0-based frame number from OpenCV.
+- timestamp_ms converts the frame index to a timestamp using the source
+  FPS.
+- The resampling check on line 73 skips frames that are too close to the
+  last processed frame. The half-source-interval tolerance prevents
+  off-by-one issues when source and target FPS don't divide evenly.
+  For example, a 30 FPS source resampled to 60 FPS would process every
+  frame; a 120 FPS source would skip every other frame.
+
+
+Lines 77–78: Progress Callback
+---------------------------------
+- Every 60 source frames, calls the status_callback if one was provided.
+  This gives the frontend periodic progress updates during extraction.
+
+
+Lines 80–84: Detection and Processing
+----------------------------------------
+- _detect_pose(): Converts the BGR frame to RGB, wraps it in a MediaPipe
+  Image, and runs pose detection. Returns the full MediaPipe result.
+- _extract_frame_data(): Checks if a pose was detected. If yes, delegates
+  to processor.process_frame() which filters, calibrates, normalizes, and
+  returns the clean data. If no pose was detected, returns zeroed defaults
+  (empty landmarks, black mask, zero trajectory).
+
+
+Lines 86–87: Debug Visualization
+-----------------------------------
+- Only runs when debug=True and a pose was detected.
+- _show_debug() draws the skeleton and mask overlay on the original frame
+  and displays both the main view and the follow-cam view in OpenCV
+  windows.
+
+
+Lines 89–91: Collect Results
+------------------------------
+- Appends the frame's landmarks, mask, and trajectory to the collection
+  lists. This happens for every processed frame, including frames with no
+  pose detected (zeroed defaults maintain frame alignment).
+
+
+Lines 93–98: Loop Cleanup
+----------------------------
+- Exits the loop if debug mode and 'q' was pressed.
+- Releases the OpenCV VideoCapture.
+- Destroys debug windows if they were open.
+
+
+Lines 100–103: Save to HDF5
+------------------------------
+- Calls _save_data() with all collected data, the target FPS, and the
+  fixed scale factor from the processor.
+
+
+Lines 105–124: _detect_pose()
+--------------------------------
+- Converts BGR → RGB (MediaPipe expects RGB input).
+- Wraps the numpy array in a MediaPipe Image with SRGB format.
+- Calls detect_for_video() which uses tracking between frames (more
+  stable than per-frame detection). The integer timestamp is required
+  by MediaPipe's VIDEO running mode.
+- Returns the raw PoseLandmarkerResult containing pose_landmarks and
+  segmentation_masks.
+
+
+Lines 126–161: _extract_frame_data()
+---------------------------------------
+- If no pose was detected (result.pose_landmarks is empty), returns
+  zeroed defaults: a (33, 4) zero array for landmarks, a zero mask of
+  target_mask_size, and [0.0, 0.0] for trajectory. These defaults
+  maintain frame count alignment — every processed frame produces exactly
+  one entry in each collection list.
+- If a pose was detected, extracts the first (and only) detected person's
+  landmarks and segmentation mask, then delegates to
+  processor.process_frame() for the full filtering/normalization pipeline.
+
+
+Lines 163–189: _show_debug()
+-------------------------------
+- Extracts the raw segmentation mask from the MediaPipe result.
+- draw_mask_overlay(): Draws a yellow semi-transparent mask over the
+  original frame so you can see which pixels MediaPipe considers "person".
+- draw_skeleton(): Draws the skeleton (lines + dots) on the overlay using
+  the filtered landmarks and the pose_connections from config.
+- Displays two windows:
+  - "Main View" — the original frame with skeleton and mask overlay.
+  - "Follow-Cam View" — the normalized, centered, scaled mask output.
+
+
+Lines 191–234: _save_data()
+------------------------------
+- Builds the output file paths: {label}_data.h5 and {label}_masks.h5.
+- Landmark HDF5 (data.h5):
+  - 'raw' dataset: All filtered landmarks as float32 array of shape
+    (N, 33, 4) where N is the number of processed frames.
+  - 'trajectory' dataset: Hip center positions as float32 array of shape
+    (N, 2). Includes a description attribute for documentation.
+  - 'fps' attribute: The target FPS used during extraction.
+  - 'fixed_scale' attribute: The calibration scale factor (defaults to
+    1.0 if no pose was ever detected).
+- Mask HDF5 (masks.h5):
+  - 'masks' dataset: All normalized masks as uint8 array of shape
+    (N, 256, 256). Compressed with gzip level 4 to reduce file size —
+    segmentation masks compress well because they're mostly 0s and 255s.
+- Prints progress messages during saving.

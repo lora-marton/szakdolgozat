@@ -1,0 +1,16 @@
+Skeleton metrics are fully implemented and verified. Here's the summary:
+
+4 functions implemented in skeleton_metrics.py:
+
+compute_joint_angles — 2D angles via dot product
+compute_cog — weighted center of gravity
+compare_angles — exponential decay scoring with per-joint tolerances
+compare_cog — CoG distance scoring
+Config additions — angle_sigma=25°, cog_sigma=0.05, weight_angles=0.80, weight_cog=0.20
+
+Comparator updated — Phase B now combines angle score (80%) + CoG score (20%) into the skeleton score.
+
+All tests pass: 90° angle computed correctly, identical sequences → 100, 80° error → 0.2, CoG scoring scales properly in the 0–1 coordinate space.
+
+Catch during verification: Initially set cog_sigma=15.0 (thinking in pixels), but your landmarks are in 0–1 normalized coordinates. Fixed to 0.05 — meaning a ~5% CoG shift drops the score to ~37%.
+

@@ -1,0 +1,107 @@
+# Dance Scoring Logic Analysis
+
+You mentioned feeling that the scores are too low. Here is **every detail** about how the scores are calculated, along with the exact configuration values you can modify to make the scoring more forgiving.
+
+All of the configuration values discussed below are located in [model/config.py](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/model/config.py) inside the [ComparisonConfig](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/model/config.py#48-134) class.
+
+---
+
+## 1. The Overall Score Formula
+
+The overall score is a weighted sum of three distinct components:
+- **Skeleton Score (50%)**: `weight_skeleton = 0.50`
+- **Trajectory Score (30%)**: `weight_trajectory = 0.30`
+- **Mask Score (20%)**: `weight_mask = 0.20`
+
+> [!TIP]
+> **How to improve the overall score:**
+> If you notice that one aspect (e.g., Mask score due to baggy clothing) is consistently dragging the score down, you can shift the weights. For example, changing `weight_skeleton` to `0.65` and `weight_mask` to `0.05` will make the system rely much more on the pose landmarks and less on the raw silhouette.
+
+---
+
+## 2. Skeleton Score (50% of Total)
+
+The skeleton score itself is broken down into two components:
+- **Joint Angles (80%)**: `weight_angles = 0.80`
+- **Center of Gravity (20%)**: `weight_cog = 0.20`
+
+### A. Joint Angles
+For every frame, the system measures the angle of key joints (elbows, knees, shoulders) and compares them between the teacher and student.
+- **Tolerances**: Each joint has a "free pass" buffer defined in `joint_tolerances`. If the error is within this buffer, the frame scores 100% for that joint.
+  - Defaults: hips (5.0°), knees (15.0°), elbows (20.0°), wrists (25.0°), shoulders (10.0°), ankles (15.0°).
+- **Decay (`angle_sigma`)**: If the error exceeds the tolerance, the score drops exponentially. Currently, `angle_sigma = 25.0`. This number defines how quickly the score drops off once outside the safe zone (at `tolerance + sigma`, the score is ~37%).
+
+> [!TIP]
+> **How to make it more forgiving:**
+> 1. **Increase the tolerances** in `joint_tolerances`. Giving the user `10.0` instead of `5.0` for hips, or `25.0` for knees, will guarantee 100% scores for minor mistakes. 
+> 2. **Increase `angle_sigma`**. Changing it from `25.0` to `35.0` or `40.0` will make the penalty curve much flatter, so being 30 degrees off won't punish the student as harshly.
+
+### B. Center of Gravity (CoG)
+Computes the weighted center of the body based on biomechanical segment weights (`cog_weights`) and measures the distance between the teacher's CoG and student's CoG.
+- The score drops exponentially based on distance using `cog_sigma = 0.05` (this is in normalized distance: `0-1`).
+
+> [!TIP]
+> **How to make it more forgiving:**
+> Increase `cog_sigma`. Changing it from `0.05` to `0.08` or `0.10` will allow larger displacements without severely tanking the CoG score.
+
+---
+
+## 3. Mask Score (20% of Total)
+
+This metric compares the body silhouettes and movement energy. It is weighted by:
+- **Shape / Silhouette (60%)**: `weight_shape = 0.60`
+- **Optical Flow Energy (40%)**: `weight_energy = 0.40`
+
+### A. DTM Shape Score
+Uses a Gaussian-weighted Distance Transform (DTM). It essentially measures how well the student's silhouette overlaps with the teacher's. 
+- **`dtm_sigma = 10.0`**: Defines the "blur" radius around the teacher's silhouette. If a student's pixel falls outside the teacher's exact shape, it still gets partial credit depending on how close it is.
+- **`efd_harmonics = 8`**: Controls how much the contour is smoothed to remove clothing wrinkles.
+
+> [!TIP]
+> **How to make it more forgiving:**
+> 1. **Increase `dtm_sigma`**. Changing it from `10.0` to `20.0` or `30.0` will cast a much wider "net" around the teacher, meaning the student doesn't have to overlap perfectly to get a high score.
+> 2. **Decrease `efd_harmonics`** from `8` to `5` to smooth out baggy clothes even more aggressively.
+
+### B. Optical Flow Energy
+Compares the amount of motion (speed/energy) happening inside the mask. 
+It measures the ratio of the slower dancer to the faster dancer for each frame pair.
+There's no direct configuration constant for the decay here since it's a direct ratio. If this is dragging scores down, the best option is to reduce `weight_energy` in favor of `weight_shape`.
+
+---
+
+## 4. Trajectory Score (30% of Total)
+
+Compares floor movement (hip displacement from frame to frame).
+- **Direction (75%)**: Uses Cosine Similarity (are they moving in the same direction?).
+- **Speed (25%)**: Uses the ratio of their speed (`min_speed / max_speed`).
+
+The weights for this are hardcoded in [model/comparison/trajectory_metrics.py](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/model/comparison/trajectory_metrics.py) as `weight_direction=0.75` and `weight_speed=0.25`. They are not currently exposed in [config.py](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/model/config.py).
+
+---
+
+# Summary of Recommended Modifications in [model/config.py](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/model/config.py)
+
+If you want an immediate and noticeable boost to user scores without breaking the logic, here are the safest parameters to tweak in [model/config.py](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/model/config.py):
+
+```python
+# 1. Be more lenient on joint angles (flatter curve)
+angle_sigma: float = 35.0   # (was 25.0)
+
+# 2. Add slightly more buffer to strict joints
+joint_tolerances: dict = field(default_factory=lambda: {
+    'hips': 10.0,       # (was 5.0)
+    'knees': 20.0,      # (was 15.0)
+    'elbows': 25.0,     # (was 20.0)
+    'wrists': 30.0,     # (was 25.0)
+    'shoulders': 15.0,  # (was 10.0)
+    'ankles': 20.0,     # (was 15.0)
+})
+
+# 3. Increase leeway for Center of Gravity displacement
+cog_sigma: float = 0.08     # (was 0.05)
+
+# 4. Make shape comparison more forgiving to body types/clothing
+dtm_sigma: float = 20.0     # (was 10.0)
+```
+
+Would you like me to go ahead and apply any of these changes to the configuration file for you?

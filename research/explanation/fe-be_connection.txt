@@ -1,0 +1,39 @@
+import { useEffect, useState } from 'react';
+
+function App() {
+  const [data, setData] = useState(null);
+
+  useEffect(() => {
+    fetch('http://localhost:8000/api/data')
+      .then(res => res.json())
+      .then(json => setData(json.message))
+      .catch(err => console.error("Error fetching:", err));
+  }, []);
+
+  return (
+    <div>
+      <h1>Backend says: {data || "Loading..."}</h1>
+    </div>
+  );
+}
+
+
+
+
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+# IMPORTANT: Allow React to talk to Python
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"], # Your React URL
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/api/data")
+async def get_data():
+    return {"message": "Hello from Python!", "status": "success"}

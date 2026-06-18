@@ -1,0 +1,34 @@
+Walkthrough - Extractor 7 (Static Virtual Camera)
+This extractor introduces a robust way to analyze dance videos by separating local body shape from global movement.
+
+Changes
+
+1. Extractor 7 Features
+
+Feature			Description
+FPS Boost 		Increased target extraction rate to 60 FPS for smoother motion.
+Lag Reduction		Tuned OneEuroFilter (beta=20.0) for snappier response to fast dance moves.
+Segmentation Mask	Extracts user silhouette (saved as compressed HDF5).
+Follow-Cam		A virtual camera that tracks the hips to keep the dancer centered.
+GPS Trajectory		Saves the camera's path so we don't lose the global movement info.
+
+
+2. File Output Structure
+
+The script produces two files:
+
+- output/dance_data_processed.h5:
+	raw: (N, 33, 4) - Original MediaPipe landmarks.
+	trajectory: (N, 2) - The (x, y) coordinates of the hip center in the original video.
+- output/dance_masks.h5:
+	masks: (N, 256, 256) - Binary masks, centered on the dancer and normalized to a standard height.
+
+
+Usage Guide for Comparison Model
+
+When you train your detailed comparison model later, you will use:
+
+1. Shape Comparison: Use the masks. Since the dancer is always centered and scaled, you can directly compare silhouettes (e.g., "Is the arm raised?").
+2. Move Comparison: Use the trajectory. You can plot the path on the floor (e.g., "Did they step 1m to the right?").
+
+This "Split Interaction" approach is robust against camera zoom, panning, and dancer height differences.

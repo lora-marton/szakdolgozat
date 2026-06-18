@@ -1,0 +1,264 @@
+text_feedback.py — Rule-Based Text Feedback Generator
+======================================================
+
+This file generates human-readable feedback messages from the comparison
+results dict. It inspects the scores and details produced by the
+Comparator and assembles a prioritised list of feedback strings for the
+frontend to display.
+
+The file contains a single class (TextFeedback) with two public static
+methods and eight private helpers. All methods are @staticmethod — no
+instance state is needed.
+
+
+================================================================================
+Public Methods
+================================================================================
+
+generate_messages(results, config=None) -> list[str]
+────────────────────────────────────────────────────
+
+  The main entry point. Takes the flat results dict from Comparator
+  (plus preprocess_info injected by video_processor) and a
+  FeedbackConfig instance.
+
+  Returns an ordered list of feedback strings. The ordering is
+  intentional — most important information first:
+
+    1. Overall summary      — one-liner based on overall_score
+    2. Worst moment         — single biggest deviation with timestamp
+    3. Joint warnings       — per-joint warnings for low-scoring joints
+    4. Trajectory warning   — if floor movement path is off
+    5. Shape warning        — if silhouette doesn't match
+    6. Energy mismatch      — if student is too slow or too exaggerated
+    7. Timing warning       — if rhythm/sync is off (or praise if good)
+    8. Praise messages      — compliments for high-scoring components
+
+  Each section is produced by a private helper method. The result is
+  a variable-length list — entries are only added when thresholds are
+  met, so a perfect performance may return only 4 messages (summary +
+  3 praise) while a poor performance may return 8+.
+
+
+extract_timeline_markers(results, config) -> list[dict]
+────────────────────────────────────────────────────────
+
+  Converts the worst_frames list from the comparison results into
+  timestamped markers for the frontend video player. Each marker has:
+
+    {'time': 1.4, 'label': '52.3%'}
+
+  The time is in seconds, calculated relative to the feedback video
+  (which uses audio offset trimming, not DTW alignment). This is done
+  via the shared _frame_to_seconds helper.
+
+  Markers are spaced at least config.min_marker_gap seconds apart
+  (default 1.0s) so they don't cluster at the same moment. Up to 5
+  markers are returned.
+
+
+================================================================================
+Private Helpers — Message Generators
+================================================================================
+
+_overall_summary(score) -> str
+──────────────────────────────
+
+  Returns a single sentence based on the overall score using four tiers:
+    >= 80  ->  "Excellent performance!"
+    >= 70  ->  "Good performance with room for improvement."
+    >= 50  ->  "Decent attempt — several areas need work."
+    <  50  ->  "This needs more practice."
+
+  The thresholds (80/70/50) were chosen to be somewhat generous —
+  beginners comparing against professionals should still get
+  encouraging feedback.
+
+
+_worst_moment(worst_frames, results) -> str | None
+──────────────────────────────────────────────────
+
+  Highlights the single biggest error. Uses the first entry from
+  worst_frames (already sorted by score ascending in SkeletonMetrics).
+  Each entry is a (dtw_idx, frame_score) tuple.
+
+  Calls _frame_to_seconds to convert the DTW alignment index to a
+  timestamp in the feedback video. If the timestamp can't be computed
+  (frame is before the video start after trimming), it falls back to
+  a message without a timestamp.
+
+
+_joint_warnings(per_joint_scores, threshold) -> list[str]
+─────────────────────────────────────────────────────────
+
+  Flags joints that scored below the warning threshold (default 60.0),
+  grouping left/right variants of the same body part.
+
+  Grouping logic:
+    Joints starting with 'left_' or 'right_' have their side stripped
+    to produce a base name (e.g. 'left_elbow' → base='elbow', side='left').
+    Joints without a side prefix get side=None.
+
+    All low-scoring joints are grouped by base name into a dict:
+      groups = {'elbow': {'left': 45.2, 'right': 62.1}, ...}
+
+    Groups are sorted by their worst score (ascending).
+
+  For each group:
+    - The _JOINT_TIPS dict at module level maps body part stems
+      ('elbow', 'knee', etc.) to actionable advice strings, using
+      substring containment:
+        for key, msg in _JOINT_TIPS.items():
+            if key in base:  # 'elbow' in 'elbow' -> True
+                tip = msg; break
+    - If no tip matches, a generic message is used.
+    - If both left and right are present: "Elbows scored 45.2% (left) /
+      62.1% (right). <tip>"
+    - If only one side: "Left elbow scored 45.2%. <tip>"
+
+  This grouping avoids redundant messages like "Left elbow is off" and
+  "Right elbow is off" appearing as separate warnings.
+
+
+_trajectory_warning(trajectory_score, threshold) -> str | None
+──────────────────────────────────────────────────────────────
+
+  Simple threshold check. If the trajectory score is below the
+  direction_warn_threshold (default 60.0, on the 0-100 scale like
+  all other thresholds), returns a warning about floor movement path.
+
+
+_shape_warning(mask_score, threshold) -> str | None
+───────────────────────────────────────────────────
+
+  Simple threshold check for the mask (silhouette) score. Below
+  mask_warn_threshold (default 60.0) triggers a warning about body
+  shape differences.
+
+
+_energy_mismatch(energy_details, config) -> str | None
+──────────────────────────────────────────────────────
+
+  Compares average movement energy between teacher and student.
+  Only considers frames where the teacher is actively moving
+  (energy > 1e-3) to avoid dividing by near-zero values during
+  still moments.
+
+  Computes the ratio: mean(student_energy) / mean(teacher_energy)
+  on active frames. Two thresholds from config:
+    - Below energy_low_threshold (0.6): "less energetic" warning
+    - Above energy_high_threshold (1.4): "exaggerated" warning
+
+  Returns None if the ratio is within the acceptable range, or if
+  no energy data is available.
+
+
+_timing_warning(timing_cost, config) -> str | None
+───────────────────────────────────────────────────
+
+  Feedback on rhythm/sync based on the normalized DTW cost from the
+  alignment phase. This cost reflects how much temporal warping was
+  needed — lower values mean the student stayed more in sync.
+
+  Two thresholds from config:
+    - Above timing_warn_threshold (0.67): "Your timing seems off" warning.
+    - At or below timing_praise_threshold (0.60): "Great timing" praise.
+    - Between the two thresholds: returns None (no message).
+
+  Returns None if timing_cost is not available in the results.
+
+
+_praise(skeleton_score, trajectory_score, mask_score, threshold) -> list[str]
+─────────────────────────────────────────────────────────────────────────────
+
+  Compliments for each component scoring above the praise_threshold
+  (default 75.0). Up to 3 messages can be generated (one per metric).
+  These appear last in the feedback list, after all warnings.
+
+
+================================================================================
+Private Helpers — Timestamp Conversion
+================================================================================
+
+_frame_to_seconds(dtw_idx, alignment, audio_offset, student_offset, source_fps)
+────────────────────────────────────────────────────────────────────────────────
+
+  Shared helper used by both _worst_moment and extract_timeline_markers.
+
+  The challenge: worst_frames indices are DTW alignment indices (from
+  the comparison phase), but the feedback video uses only audio offset
+  trimming (no DTW). So we need to convert:
+
+    DTW index -> student frame index (via alignment path)
+      -> raw student frame index (add back student_offset from motion detection)
+        -> feedback video frame (adjust for audio offset trimming)
+          -> seconds (divide by output_fps)
+
+  Step by step:
+    1. Look up the student frame index from the alignment path:
+         student_idx = alignment[dtw_idx][1]
+
+    2. Add back the student_offset (frames trimmed by motion energy
+       detection during preprocessing):
+         raw_student_idx = student_idx + student_offset
+
+    3. Adjust for audio offset trimming in the video renderer:
+         scale = source_fps / target_fps
+         trim_frames = abs(audio_offset) * scale
+         if audio_offset < 0: video_frame = raw_student_idx - trim_frames
+         else: video_frame = raw_student_idx
+
+       When audio_offset < 0, the video renderer trims leading student
+       frames, so the same raw frame appears earlier in the video.
+       When audio_offset > 0, teacher frames are trimmed instead,
+       so the student frame index is unchanged.
+
+    4. Convert to seconds:
+         return video_frame / output_fps
+
+  Returns None if the computed video_frame is negative (the moment
+  happened before the video starts after trimming).
+
+
+================================================================================
+Configuration Dependencies
+================================================================================
+
+  FeedbackConfig fields used:
+    - joint_warn_threshold (60.0)      — _joint_warnings
+    - direction_warn_threshold (60.0)  — _trajectory_warning
+    - mask_warn_threshold (60.0)       — _shape_warning
+    - praise_threshold (75.0)          — _praise
+    - min_marker_gap (1.0)             — extract_timeline_markers
+    - energy_low_threshold (0.6)       — _energy_mismatch
+    - energy_high_threshold (1.4)      — _energy_mismatch
+    - timing_warn_threshold (0.67)     — _timing_warning
+    - timing_praise_threshold (0.60)   — _timing_warning
+
+  ExtractionConfig fields used (via DEFAULT_EXTRACTION_CONFIG):
+    - target_fps                    — _frame_to_seconds
+    - output_fps                    — _frame_to_seconds
+
+
+================================================================================
+Design Notes
+================================================================================
+
+  - Feedback text uses ⚠ (warning) and ✓ (check mark) emojis to
+    visually distinguish warnings from praise messages. These are
+    included intentionally for direct display in the frontend.
+
+  - Messages are plain strings, not structured objects. The frontend
+    can parse them if needed, but the primary use case is displaying
+    them as-is in a list.
+
+  - The _JOINT_TIPS dict uses singular body part stems ('elbow' not
+    'elbows') so that substring matching works with both 'left_elbow'
+    and 'right_elbow'. This avoids duplicating tips for left/right.
+
+  - Energy thresholds are asymmetric (0.6 low, 1.4 high) because
+    under-dancing is more common and noticeable than over-dancing.
+
+  - The feedback video uses output_fps (30.0) for playback, not
+    target_fps (which is the extraction/analysis rate). The timestamp
+    conversion must use output_fps to match what the viewer sees.

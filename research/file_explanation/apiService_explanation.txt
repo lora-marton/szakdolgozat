@@ -1,0 +1,152 @@
+apiService.ts — API Integration Service
+========================================
+
+This file centralises all communication between the React frontend and the
+FastAPI backend. Every HTTP request and SSE connection goes through this
+module, so the backend URL is defined in exactly one place.
+
+The file exports two interfaces (response shapes) and six functions (one per
+API interaction). There is also one private helper (fetchJson) that wraps
+the Fetch API with error handling and JSON parsing.
+
+
+================================================================================
+Module-Level Constant
+================================================================================
+
+  BASE_URL = 'http://localhost:8000'
+
+    The backend server address. All functions build their URLs from this.
+    Not exported — internal to this module. Changing this one value switches
+    the entire frontend to a different backend.
+
+
+================================================================================
+Interfaces
+================================================================================
+
+FeedbackResponse
+────────────────
+
+  Maps 1:1 to the JSON returned by GET /feedback in routes.py:
+
+    session_id          string                  Which session this belongs to
+    overall_score       number                  Combined 0-100 score
+    skeleton_score      number                  Joint angle + CoG score
+    trajectory_score    number                  Floor movement score
+    mask_score          number                  Silhouette shape score
+    timing_cost         number                  Normalized DTW cost
+    per_joint_scores    Record<string, number>  Joint name → score dict
+    feedback            string[]                Text feedback messages
+    timeline_markers    { time, label }[]       Video player markers
+    feedback_video_url  string | null           URL or null if no video
+
+  Record<string, number> is TypeScript's generic for { [key: string]: number }.
+  Used by ResultsPanel to render per-joint score chips.
+
+
+DetailedFeedbackResponse
+────────────────────────
+
+  Extends FeedbackResponse with per-frame data from GET /feedback/detailed.
+  Used for charts and visualizations that need raw comparison data:
+
+    alignment_path    [number, number][]    DTW (teacher_idx, student_idx) pairs
+    worst_frames      [number, number][]    (frame_idx, score) pairs, worst first
+    per_frame_shape   number[]              Per-frame DTM silhouette scores
+    energy_details    object                Energy score + per-frame arrays
+
+
+================================================================================
+Private Helper
+================================================================================
+
+fetchJson<T>(path, message?, options?) -> Promise<T>
+────────────────────────────────────────────────────
+
+  Generic wrapper around the Fetch API. The type parameter <T> lets each
+  caller specify the expected response shape — TypeScript enforces this at
+  compile time.
+
+  Steps:
+    1. Builds the full URL from BASE_URL + path.
+    2. Calls fetch() with optional RequestInit (method, body, headers).
+    3. Checks response.ok (HTTP 200-299). Throws on failure.
+    4. Optionally logs a debug message to the console.
+    5. Parses and returns the JSON body cast to type T.
+
+  The optional message parameter is a lightweight debugging aid — each
+  caller passes a short string that appears in the browser console on
+  success (e.g. "Feedback received.").
+
+
+================================================================================
+Exported Functions
+================================================================================
+
+sendFiles(teacherFile, studentFile) -> Promise<Record<string, unknown>>
+───────────────────────────────────────────────────────────────────────
+
+  Posts two video files to POST /dance_videos as multipart form data.
+  The FormData field names ('teacher', 'student') must match the FastAPI
+  UploadFile parameter names in routes.py.
+
+  The return type is loose (Record<string, unknown>) because no component
+  reads the upload response — the actual results arrive later via
+  getFeedback() after SSE signals completion.
+
+
+getFeedback(sessionId?) -> Promise<FeedbackResponse>
+────────────────────────────────────────────────────
+
+  Fetches curated feedback for a session from GET /feedback. If sessionId
+  is omitted, the backend returns the latest session. Builds an optional
+  query string with a ternary.
+
+
+getDetailedFeedback(sessionId?) -> Promise<DetailedFeedbackResponse>
+───────────────────────────────────────────────────────────────────
+
+  Same pattern as getFeedback but hits GET /feedback/detailed and returns
+  the extended response with per-frame data.
+
+
+getSessions() -> Promise<string[]>
+──────────────────────────────────
+
+  Fetches the list of session IDs from GET /sessions. The backend wraps
+  them in { sessions: [...] }, so this function unwraps the array via
+  .then() — callers get string[] directly.
+
+
+connectToEvents() -> EventSource
+────────────────────────────────
+
+  Creates a browser EventSource connection to the GET /events SSE endpoint.
+  The returned EventSource fires onmessage events as the backend pushes
+  status updates during video processing. The caller (Feedback.tsx)
+  attaches listeners and closes the connection when done.
+
+
+videoUrl(path) -> string
+────────────────────────
+
+  Builds a full URL from a relative path (e.g. '/feedback/video?session_id=...').
+  Used by VideoFeedback.tsx to set the <video> element's src attribute.
+
+
+================================================================================
+Design Notes
+================================================================================
+
+  - All functions are named exports (no default export). This enables
+    tree-shaking and explicit imports in components.
+
+  - All functions except fetchJson are synchronous wrappers that return
+    promises from fetchJson or constructors. getSessions uses .then()
+    to unwrap the response. This keeps the style consistent — no mixing
+    of async/await and implicit promise returns.
+
+  - The file has no React dependencies — it's a pure TypeScript service
+    module. This makes it testable without a React environment and
+    reusable if the UI framework ever changes.

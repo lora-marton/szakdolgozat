@@ -1,0 +1,1482 @@
+# Video Feedback — All Changes
+
+## Overview
+
+Two rounds of changes: initial implementation, then bug fixes for frame sync, preprocessing offsets, and browser codec.
+
+---
+
+## New Files
+
+### [video_feedback.py](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/model/comparison/video_feedback.py)
+
+Core renderer that generates a side-by-side MP4. Key design:
+- Reads **all frames sequentially** with the same FPS resampling logic as [extractor.py](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/model/extraction/extractor.py) — avoids unreliable `cv2.CAP_PROP_POS_FRAMES` seeking
+- Uses `preprocess_info` offsets to map DTW alignment indices back to original HDF5 frame indices
+- Draws green skeleton on both dancers + blue ghost of teacher on student's side
+- Writes with `mp4v`, then **re-encodes to H.264** via `imageio-ffmpeg` for browser compatibility
+- Caps output height at **720px**
+
+### [VideoFeedback.tsx](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/view/src/components/VideoFeedback.tsx)
+
+MUI-styled video player component. Renders an HTML5 `<video>` element with native controls. Fetches from `http://localhost:8001/feedback/video?session_id=...`.
+
+### [test_video_feedback.py](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/model/comparison/test_video_feedback.py)
+
+Synthetic test suite (creates fake videos + HDF5 data, verifies output MP4 dimensions/frame count).
+
+---
+
+## Modified Files
+
+### [preprocessor.py](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/model/preprocessing/preprocessor.py)
+
+> [!IMPORTANT]
+> **Interface change**: [preprocess()](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/model/preprocessing/preprocessor.py#16-102) now returns a **3-tuple** instead of 2-tuple.
+
+```diff
+- Returns:
+-     (teacher_data, student_data)
++ Returns:
++     (teacher_data, student_data, preprocess_info)
+```
+
+`preprocess_info` is a dict with `teacher_offset` and `student_offset` — the total number of HDF5 frames trimmed from the start of each sequence (audio sync + motion trim combined).
+
+```diff:preprocessor.py
+"""
+Preprocessing orchestrator for dance comparison.
+
+Synchronises and trims two dance sequences before DTW alignment:
+1. Audio cross-correlation  → find frame offset between the videos
+2. Apply offset             → shift/trim the leading video
+3. Motion energy detection  → find active range in each sequence
+4. Intersection             → keep only the overlapping active region
+"""
+import numpy as np
+
+from model.preprocessing.audio_sync import compute_audio_offset
+from model.preprocessing.motion_energy import compute_motion_energy, find_active_range
+
+
+def preprocess(teacher_data, student_data, teacher_video, student_video, config=None):
+    """
+    Synchronise and trim teacher/student data to the shared active dance region.
+
+    Args:
+        teacher_data: Dict with 'landmarks', 'masks', 'trajectory' arrays + 'fps'.
+        student_data: Same structure as teacher_data.
+        teacher_video: Path to the teacher video file (for audio extraction).
+        student_video: Path to the student video file (for audio extraction).
+        config: PreprocessorConfig instance (uses defaults if None).
+
+    Returns:
+        (teacher_data, student_data): Trimmed copies of both data dicts,
+            each containing only the frames within the shared active region.
+    """
+    from model.config import DEFAULT_PREPROCESSOR_CONFIG
+    if config is None:
+        config = DEFAULT_PREPROCESSOR_CONFIG
+
+    fps = teacher_data.get('fps', 60.0)
+
+    # ------------------------------------------------------------------
+    # Step 1: Audio cross-correlation → frame offset
+    # ------------------------------------------------------------------
+    offset = compute_audio_offset(
+        teacher_video, student_video,
+        target_fps=fps,
+        sr=config.audio_sample_rate,
+    )
+    print(f"[Preprocessor] Audio offset: {offset} frames "
+          f"({'teacher leads' if offset > 0 else 'student leads' if offset < 0 else 'in sync'})")
+
+    # ------------------------------------------------------------------
+    # Step 2: Apply offset — trim leading frames from the earlier video
+    # ------------------------------------------------------------------
+    teacher_data, student_data = _apply_offset(teacher_data, student_data, offset)
+
+    # ------------------------------------------------------------------
+    # Step 3: Motion energy → active range for each dancer
+    # ------------------------------------------------------------------
+    t_energy = compute_motion_energy(teacher_data['landmarks'])
+    s_energy = compute_motion_energy(student_data['landmarks'])
+
+    t_start, t_end = find_active_range(
+        t_energy, config.motion_threshold_ratio, config.min_active_duration,
+    )
+    s_start, s_end = find_active_range(
+        s_energy, config.motion_threshold_ratio, config.min_active_duration,
+    )
+
+    print(f"[Preprocessor] Teacher active range: frames {t_start}–{t_end}")
+    print(f"[Preprocessor] Student active range: frames {s_start}–{s_end}")
+
+    # ------------------------------------------------------------------
+    # Step 4: Intersection — keep only the overlapping active region
+    # ------------------------------------------------------------------
+    shared_start = max(t_start, s_start)
+    shared_end = min(t_end, s_end)
+
+    if shared_start >= shared_end:
+        print("[Preprocessor] WARNING: No overlapping active region found. "
+              "Skipping trimming.")
+        return teacher_data, student_data
+
+    print(f"[Preprocessor] Shared active region: frames {shared_start}–{shared_end} "
+          f"({shared_end - shared_start} frames)")
+
+    teacher_data = _slice_data(teacher_data, shared_start, shared_end)
+    student_data = _slice_data(student_data, shared_start, shared_end)
+
+    return teacher_data, student_data
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────
+
+
+def _apply_offset(teacher_data, student_data, offset):
+    """
+    Trim the leading frames from the earlier video so both start at the same
+    musical moment, then truncate to the shorter length.
+    """
+    if offset > 0:
+        # Teacher leads → trim first `offset` frames from teacher
+        teacher_data = _slice_data(teacher_data, offset, None)
+    elif offset < 0:
+        # Student leads → trim first `|offset|` frames from student
+        student_data = _slice_data(student_data, -offset, None)
+
+    # Truncate to the shorter sequence
+    min_len = min(
+        len(teacher_data['landmarks']),
+        len(student_data['landmarks']),
+    )
+    teacher_data = _slice_data(teacher_data, 0, min_len)
+    student_data = _slice_data(student_data, 0, min_len)
+
+    return teacher_data, student_data
+
+
+def _slice_data(data, start, end):
+    """
+    Return a copy of the data dict with all arrays sliced to [start:end].
+    Non-array entries (e.g. 'fps', 'fixed_scale') are preserved as-is.
+    """
+    sliced = {}
+    for key, value in data.items():
+        if isinstance(value, np.ndarray):
+            sliced[key] = value[start:end]
+        else:
+            sliced[key] = value
+    return sliced
+===
+"""
+Preprocessing orchestrator for dance comparison.
+
+Synchronises and trims two dance sequences before DTW alignment:
+1. Audio cross-correlation  → find frame offset between the videos
+2. Apply offset             → shift/trim the leading video
+3. Motion energy detection  → find active range in each sequence
+4. Intersection             → keep only the overlapping active region
+"""
+import numpy as np
+
+from model.preprocessing.audio_sync import compute_audio_offset
+from model.preprocessing.motion_energy import compute_motion_energy, find_active_range
+
+
+def preprocess(teacher_data, student_data, teacher_video, student_video, config=None):
+    """
+    Synchronise and trim teacher/student data to the shared active dance region.
+
+    Args:
+        teacher_data: Dict with 'landmarks', 'masks', 'trajectory' arrays + 'fps'.
+        student_data: Same structure as teacher_data.
+        teacher_video: Path to the teacher video file (for audio extraction).
+        student_video: Path to the student video file (for audio extraction).
+        config: PreprocessorConfig instance (uses defaults if None).
+
+    Returns:
+        (teacher_data, student_data, preprocess_info): Trimmed copies of both
+            data dicts, plus a dict with 'teacher_offset' and 'student_offset'
+            (number of frames trimmed from the start of each HDF5 sequence).
+    """
+    from model.config import DEFAULT_PREPROCESSOR_CONFIG
+    if config is None:
+        config = DEFAULT_PREPROCESSOR_CONFIG
+
+    fps = teacher_data.get('fps', 60.0)
+
+    # ------------------------------------------------------------------
+    # Step 1: Audio cross-correlation → frame offset
+    # ------------------------------------------------------------------
+    offset = compute_audio_offset(
+        teacher_video, student_video,
+        target_fps=fps,
+        sr=config.audio_sample_rate,
+    )
+    print(f"[Preprocessor] Audio offset: {offset} frames "
+          f"({'teacher leads' if offset > 0 else 'student leads' if offset < 0 else 'in sync'})")
+
+    # ------------------------------------------------------------------
+    # Step 2: Apply offset — trim leading frames from the earlier video
+    # ------------------------------------------------------------------
+    # Track how many frames are trimmed from each due to audio offset
+    teacher_audio_trim = offset if offset > 0 else 0
+    student_audio_trim = -offset if offset < 0 else 0
+
+    teacher_data, student_data = _apply_offset(teacher_data, student_data, offset)
+
+    # ------------------------------------------------------------------
+    # Step 3: Motion energy → active range for each dancer
+    # ------------------------------------------------------------------
+    t_energy = compute_motion_energy(teacher_data['landmarks'])
+    s_energy = compute_motion_energy(student_data['landmarks'])
+
+    t_start, t_end = find_active_range(
+        t_energy, config.motion_threshold_ratio, config.min_active_duration,
+    )
+    s_start, s_end = find_active_range(
+        s_energy, config.motion_threshold_ratio, config.min_active_duration,
+    )
+
+    print(f"[Preprocessor] Teacher active range: frames {t_start}--{t_end}")
+    print(f"[Preprocessor] Student active range: frames {s_start}--{s_end}")
+
+    # ------------------------------------------------------------------
+    # Step 4: Intersection — keep only the overlapping active region
+    # ------------------------------------------------------------------
+    shared_start = max(t_start, s_start)
+    shared_end = min(t_end, s_end)
+
+    if shared_start >= shared_end:
+        print("[Preprocessor] WARNING: No overlapping active region found. "
+              "Skipping trimming.")
+        preprocess_info = {
+            'teacher_offset': teacher_audio_trim,
+            'student_offset': student_audio_trim,
+        }
+        return teacher_data, student_data, preprocess_info
+
+    print(f"[Preprocessor] Shared active region: frames {shared_start}--{shared_end} "
+          f"({shared_end - shared_start} frames)")
+
+    teacher_data = _slice_data(teacher_data, shared_start, shared_end)
+    student_data = _slice_data(student_data, shared_start, shared_end)
+
+    # Total offset: audio trim + shared region trim
+    preprocess_info = {
+        'teacher_offset': teacher_audio_trim + shared_start,
+        'student_offset': student_audio_trim + shared_start,
+    }
+
+    return teacher_data, student_data, preprocess_info
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────
+
+
+def _apply_offset(teacher_data, student_data, offset):
+    """
+    Trim the leading frames from the earlier video so both start at the same
+    musical moment, then truncate to the shorter length.
+    """
+    if offset > 0:
+        # Teacher leads → trim first `offset` frames from teacher
+        teacher_data = _slice_data(teacher_data, offset, None)
+    elif offset < 0:
+        # Student leads → trim first `|offset|` frames from student
+        student_data = _slice_data(student_data, -offset, None)
+
+    # Truncate to the shorter sequence
+    min_len = min(
+        len(teacher_data['landmarks']),
+        len(student_data['landmarks']),
+    )
+    teacher_data = _slice_data(teacher_data, 0, min_len)
+    student_data = _slice_data(student_data, 0, min_len)
+
+    return teacher_data, student_data
+
+
+def _slice_data(data, start, end):
+    """
+    Return a copy of the data dict with all arrays sliced to [start:end].
+    Non-array entries (e.g. 'fps', 'fixed_scale') are preserved as-is.
+    """
+    sliced = {}
+    for key, value in data.items():
+        if isinstance(value, np.ndarray):
+            sliced[key] = value[start:end]
+        else:
+            sliced[key] = value
+    return sliced
+```
+
+---
+
+### [comparator.py](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/model/comparison/comparator.py)
+
+- Handles the new 3-tuple from [preprocess()](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/model/preprocessing/preprocessor.py#16-102)
+- Defaults to `{'teacher_offset': 0, 'student_offset': 0}` when preprocessing is skipped
+- Includes `preprocess_info` in the returned results dict
+
+```diff:comparator.py
+"""
+Dance comparison orchestrator.
+
+Loads teacher and student HDF5 data, runs all comparison metrics,
+and produces a structured result with scores and feedback.
+"""
+import os
+import numpy as np
+import h5py
+
+from model.config import DEFAULT_COMPARISON_CONFIG
+from model.preprocessing.preprocessor import preprocess
+from model.comparison.dtw import align_sequences
+from model.comparison.skeleton_metrics import compute_joint_angles, compute_cog, compare_angles, compare_cog
+from model.comparison.mask_metrics import compute_mask_score
+from model.comparison.trajectory_metrics import compare_trajectories
+
+
+def compare_dances(output_dir, teacher_video=None, student_video=None, config=None):
+    """
+    Compare teacher and student dance data from a session directory.
+
+    Args:
+        output_dir: Path to session directory containing teacher_*.h5 and student_*.h5 files.
+        teacher_video: Path to the teacher video file (needed for audio sync).
+        student_video: Path to the student video file (needed for audio sync).
+        config: ComparisonConfig instance (uses DEFAULT_COMPARISON_CONFIG if None).
+
+    Returns:
+        results: Dict with scores and feedback:
+            {
+                'overall_score': float (0-100),
+                'skeleton_score': float (0-100),
+                'trajectory_score': float (0-100),
+                'mask_score': float (0-100),
+                'timing_cost': float,
+                'alignment_path': list,
+                'feedback': list of str,
+            }
+    """
+    if config is None:
+        config = DEFAULT_COMPARISON_CONFIG
+
+    # --- Load data ---
+    teacher_data = _load_session_data(output_dir, 'teacher')
+    student_data = _load_session_data(output_dir, 'student')
+
+    # --- Phase 0: Preprocessing (sync + trim) ---
+    if teacher_video and student_video:
+        teacher_data, student_data = preprocess(
+            teacher_data, student_data,
+            teacher_video, student_video,
+        )
+    else:
+        print("[Comparator] Video paths not provided — skipping audio sync & trimming.")
+
+    # --- Phase A: Temporal Alignment (DTW) ---
+    alignment_path, timing_cost = align_sequences(
+        teacher_data['landmarks'],
+        student_data['landmarks'],
+        config.dtw_joints,
+    )
+
+    # Apply alignment: reindex student data to match teacher frames
+    teacher_idx = [pair[0] for pair in alignment_path]
+    student_idx = [pair[1] for pair in alignment_path]
+
+    aligned_teacher_lm = teacher_data['landmarks'][teacher_idx]
+    aligned_student_lm = student_data['landmarks'][student_idx]
+    aligned_teacher_masks = teacher_data['masks'][teacher_idx]
+    aligned_student_masks = student_data['masks'][student_idx]
+    aligned_teacher_traj = teacher_data['trajectory'][teacher_idx]
+    aligned_student_traj = student_data['trajectory'][student_idx]
+
+    # --- Phase B: Skeleton Comparison ---
+    teacher_angles = compute_joint_angles(aligned_teacher_lm, config.joint_angles)
+    student_angles = compute_joint_angles(aligned_student_lm, config.joint_angles)
+    angle_score, per_joint_scores, worst_frames = compare_angles(
+        teacher_angles, student_angles, config.joint_tolerances, config.angle_sigma,
+    )
+
+    teacher_cog = compute_cog(aligned_teacher_lm, config.cog_weights)
+    student_cog = compute_cog(aligned_student_lm, config.cog_weights)
+    cog_score = compare_cog(teacher_cog, student_cog, config.cog_sigma)
+
+    skeleton_score = config.weight_angles * angle_score + config.weight_cog * cog_score
+
+    # --- Phase C: Mask Comparison ---
+    mask_result = compute_mask_score(aligned_teacher_masks, aligned_student_masks, config)
+    mask_score_pct = mask_result['score']
+
+    # --- Phase D: Trajectory Comparison ---
+    trajectory_score, direction_similarity = compare_trajectories(
+        aligned_teacher_traj, aligned_student_traj,
+    )
+
+    # --- Weighted Final Score ---
+    overall_score = (
+        config.weight_skeleton * skeleton_score
+        + config.weight_trajectory * trajectory_score
+        + config.weight_mask * mask_score_pct
+    )
+
+    return {
+        'overall_score': round(overall_score, 1),
+        'skeleton_score': round(skeleton_score, 1),
+        'trajectory_score': round(trajectory_score, 1),
+        'mask_score': round(mask_score_pct, 1),
+        'timing_cost': round(timing_cost, 3),
+        'alignment_path': alignment_path,
+        'per_joint_scores': per_joint_scores,
+        'worst_frames': worst_frames,
+        'per_frame_shape': mask_result['per_frame_shape'],
+        'energy_details': mask_result['energy_details'],
+    }
+
+
+def _load_session_data(output_dir, label):
+    """Load landmarks, masks, and trajectory from a session's HDF5 files."""
+    data_path = os.path.join(output_dir, f'{label}_data.h5')
+    mask_path = os.path.join(output_dir, f'{label}_masks.h5')
+
+    with h5py.File(data_path, 'r') as f:
+        landmarks = f['raw'][:]
+        trajectory = f['trajectory'][:]
+        fps = f.attrs.get('fps', 60.0)
+        fixed_scale = f.attrs.get('fixed_scale', 1.0)
+
+    with h5py.File(mask_path, 'r') as f:
+        masks = f['masks'][:]
+
+    return {
+        'landmarks': landmarks,
+        'trajectory': trajectory,
+        'masks': masks,
+        'fps': fps,
+        'fixed_scale': fixed_scale,
+    }
+
+
+
+===
+"""
+Dance comparison orchestrator.
+
+Loads teacher and student HDF5 data, runs all comparison metrics,
+and produces a structured result with scores and feedback.
+"""
+import os
+import numpy as np
+import h5py
+
+from model.config import DEFAULT_COMPARISON_CONFIG
+from model.preprocessing.preprocessor import preprocess
+from model.comparison.dtw import align_sequences
+from model.comparison.skeleton_metrics import compute_joint_angles, compute_cog, compare_angles, compare_cog
+from model.comparison.mask_metrics import compute_mask_score
+from model.comparison.trajectory_metrics import compare_trajectories
+
+
+def compare_dances(output_dir, teacher_video=None, student_video=None, config=None):
+    """
+    Compare teacher and student dance data from a session directory.
+
+    Args:
+        output_dir: Path to session directory containing teacher_*.h5 and student_*.h5 files.
+        teacher_video: Path to the teacher video file (needed for audio sync).
+        student_video: Path to the student video file (needed for audio sync).
+        config: ComparisonConfig instance (uses DEFAULT_COMPARISON_CONFIG if None).
+
+    Returns:
+        results: Dict with scores and feedback:
+            {
+                'overall_score': float (0-100),
+                'skeleton_score': float (0-100),
+                'trajectory_score': float (0-100),
+                'mask_score': float (0-100),
+                'timing_cost': float,
+                'alignment_path': list,
+                'feedback': list of str,
+            }
+    """
+    if config is None:
+        config = DEFAULT_COMPARISON_CONFIG
+
+    # --- Load data ---
+    teacher_data = _load_session_data(output_dir, 'teacher')
+    student_data = _load_session_data(output_dir, 'student')
+
+    # --- Phase 0: Preprocessing (sync + trim) ---
+    preprocess_info = {'teacher_offset': 0, 'student_offset': 0}
+    if teacher_video and student_video:
+        teacher_data, student_data, preprocess_info = preprocess(
+            teacher_data, student_data,
+            teacher_video, student_video,
+        )
+    else:
+        print("[Comparator] Video paths not provided — skipping audio sync & trimming.")
+
+    # --- Phase A: Temporal Alignment (DTW) ---
+    alignment_path, timing_cost = align_sequences(
+        teacher_data['landmarks'],
+        student_data['landmarks'],
+        config.dtw_joints,
+    )
+
+    # Apply alignment: reindex student data to match teacher frames
+    teacher_idx = [pair[0] for pair in alignment_path]
+    student_idx = [pair[1] for pair in alignment_path]
+
+    aligned_teacher_lm = teacher_data['landmarks'][teacher_idx]
+    aligned_student_lm = student_data['landmarks'][student_idx]
+    aligned_teacher_masks = teacher_data['masks'][teacher_idx]
+    aligned_student_masks = student_data['masks'][student_idx]
+    aligned_teacher_traj = teacher_data['trajectory'][teacher_idx]
+    aligned_student_traj = student_data['trajectory'][student_idx]
+
+    # --- Phase B: Skeleton Comparison ---
+    teacher_angles = compute_joint_angles(aligned_teacher_lm, config.joint_angles)
+    student_angles = compute_joint_angles(aligned_student_lm, config.joint_angles)
+    angle_score, per_joint_scores, worst_frames = compare_angles(
+        teacher_angles, student_angles, config.joint_tolerances, config.angle_sigma,
+    )
+
+    teacher_cog = compute_cog(aligned_teacher_lm, config.cog_weights)
+    student_cog = compute_cog(aligned_student_lm, config.cog_weights)
+    cog_score = compare_cog(teacher_cog, student_cog, config.cog_sigma)
+
+    skeleton_score = config.weight_angles * angle_score + config.weight_cog * cog_score
+
+    # --- Phase C: Mask Comparison ---
+    mask_result = compute_mask_score(aligned_teacher_masks, aligned_student_masks, config)
+    mask_score_pct = mask_result['score']
+
+    # --- Phase D: Trajectory Comparison ---
+    trajectory_score, direction_similarity = compare_trajectories(
+        aligned_teacher_traj, aligned_student_traj,
+    )
+
+    # --- Weighted Final Score ---
+    overall_score = (
+        config.weight_skeleton * skeleton_score
+        + config.weight_trajectory * trajectory_score
+        + config.weight_mask * mask_score_pct
+    )
+
+    return {
+        'overall_score': round(overall_score, 1),
+        'skeleton_score': round(skeleton_score, 1),
+        'trajectory_score': round(trajectory_score, 1),
+        'mask_score': round(mask_score_pct, 1),
+        'timing_cost': round(timing_cost, 3),
+        'alignment_path': alignment_path,
+        'per_joint_scores': per_joint_scores,
+        'worst_frames': worst_frames,
+        'per_frame_shape': mask_result['per_frame_shape'],
+        'energy_details': mask_result['energy_details'],
+        'preprocess_info': preprocess_info,
+    }
+
+
+def _load_session_data(output_dir, label):
+    """Load landmarks, masks, and trajectory from a session's HDF5 files."""
+    data_path = os.path.join(output_dir, f'{label}_data.h5')
+    mask_path = os.path.join(output_dir, f'{label}_masks.h5')
+
+    with h5py.File(data_path, 'r') as f:
+        landmarks = f['raw'][:]
+        trajectory = f['trajectory'][:]
+        fps = f.attrs.get('fps', 60.0)
+        fixed_scale = f.attrs.get('fixed_scale', 1.0)
+
+    with h5py.File(mask_path, 'r') as f:
+        masks = f['masks'][:]
+
+    return {
+        'landmarks': landmarks,
+        'trajectory': trajectory,
+        'masks': masks,
+        'fps': fps,
+        'fixed_scale': fixed_scale,
+    }
+
+
+
+```
+
+---
+
+### [video_processor.py](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/model/video_processor.py)
+
+- Added `from model.comparison.video_feedback import generate_feedback_video`
+- Added **Phase 4** after feedback generation: calls [generate_feedback_video](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/model/comparison/video_feedback.py#137-278) in a thread
+- Passes `results.get('preprocess_info')` to the renderer
+
+```diff:video_processor.py
+import os
+import asyncio
+import traceback
+from model.extraction.extractor import data_extraction
+from model.comparison.comparator import compare_dances
+from model.comparison.feedback import generate_feedback
+from model.config import DEFAULT_COMPARISON_CONFIG
+
+
+async def process_videos(teacher_file, student_file, output_dir='data',
+                         config=None, event_handler=None):
+    """
+    Process videos: extract poses, compare teacher vs student, generate feedback.
+    Runs heavy computation in threads to avoid blocking the async event loop.
+    """
+    if config is None:
+        config = DEFAULT_COMPARISON_CONFIG
+
+    async def send_status(msg):
+        print(msg)
+        if event_handler:
+            await event_handler(msg)
+
+    if os.path.exists(teacher_file) and os.path.exists(student_file):
+        await send_status("Processing videos...")
+    else:
+        await send_status("Error: Videos not found.")
+        return None
+
+    try:
+        # Phase 1: Extraction
+        await asyncio.to_thread(data_extraction, teacher_file, output_dir, 'teacher')
+        await send_status("Teacher video extracted.")
+
+        await asyncio.to_thread(data_extraction, student_file, output_dir, 'student')
+        await send_status("Student video extracted.")
+
+        # Phase 2: Comparison
+        await send_status("Comparing performances...")
+        results = await asyncio.to_thread(
+            compare_dances, output_dir,
+            teacher_video=teacher_file, student_video=student_file,
+            config=config,
+        )
+        await send_status(f"Comparison complete. Overall score: {results['overall_score']}%")
+
+        # Phase 3: Feedback generation
+        await send_status("Generating feedback...")
+        results['feedback'] = generate_feedback(results, config)
+        await send_status("Feedback ready.")
+
+        return results
+
+    except Exception as e:
+        traceback.print_exc()
+        await send_status(f"Error processing videos: {type(e).__name__}: {e}")
+        return None
+===
+import os
+import asyncio
+import traceback
+from model.extraction.extractor import data_extraction
+from model.comparison.comparator import compare_dances
+from model.comparison.feedback import generate_feedback
+from model.comparison.video_feedback import generate_feedback_video
+from model.config import DEFAULT_COMPARISON_CONFIG
+
+
+async def process_videos(teacher_file, student_file, output_dir='data',
+                         config=None, event_handler=None):
+    """
+    Process videos: extract poses, compare teacher vs student, generate feedback.
+    Runs heavy computation in threads to avoid blocking the async event loop.
+    """
+    if config is None:
+        config = DEFAULT_COMPARISON_CONFIG
+
+    async def send_status(msg):
+        print(msg)
+        if event_handler:
+            await event_handler(msg)
+
+    if os.path.exists(teacher_file) and os.path.exists(student_file):
+        await send_status("Processing videos...")
+    else:
+        await send_status("Error: Videos not found.")
+        return None
+
+    try:
+        # Phase 1: Extraction
+        await asyncio.to_thread(data_extraction, teacher_file, output_dir, 'teacher')
+        await send_status("Teacher video extracted.")
+
+        await asyncio.to_thread(data_extraction, student_file, output_dir, 'student')
+        await send_status("Student video extracted.")
+
+        # Phase 2: Comparison
+        await send_status("Comparing performances...")
+        results = await asyncio.to_thread(
+            compare_dances, output_dir,
+            teacher_video=teacher_file, student_video=student_file,
+            config=config,
+        )
+        await send_status(f"Comparison complete. Overall score: {results['overall_score']}%")
+
+        # Phase 3: Feedback generation
+        await send_status("Generating feedback...")
+        results['feedback'] = generate_feedback(results, config)
+        await send_status("Feedback ready.")
+
+        # Phase 4: Feedback video generation
+        await send_status("Generating feedback video...")
+        video_path = await asyncio.to_thread(
+            generate_feedback_video,
+            teacher_file, student_file, output_dir,
+            results['alignment_path'],
+            results.get('preprocess_info'),
+        )
+        results['feedback_video'] = os.path.basename(video_path)
+        await send_status("Feedback video ready.")
+
+        return results
+
+    except Exception as e:
+        traceback.print_exc()
+        await send_status(f"Error processing videos: {type(e).__name__}: {e}")
+        return None
+```
+
+---
+
+### [feedbackSender.py](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/controller/feedbackSender.py)
+
+- Added `FileResponse` import
+- `/feedback` response now includes `feedback_video_url` field (or `null` if no video exists)
+- New endpoint: `GET /feedback/video?session_id=...` — streams the MP4 as `FileResponse`
+
+```diff:feedbackSender.py
+"""
+Feedback delivery endpoint.
+
+Provides a GET endpoint to retrieve the latest comparison results
+and feedback generated by the dance comparison pipeline.
+Uses FastAPI with CORS, matching the pattern of fileGetter.py.
+"""
+import os
+import sys
+import json
+from datetime import datetime
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import uvicorn
+
+# Ensure project root is on path
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(CURRENT_DIR)
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
+app = FastAPI()
+
+# Configure CORS (same as fileGetter.py)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Storage directory for results (root/data/)
+DATA_DIR = os.path.join(ROOT_DIR, 'data')
+
+
+def _find_latest_session():
+    """Find the most recent session directory inside data/."""
+    if not os.path.isdir(DATA_DIR):
+        return None
+    sessions = sorted(
+        [d for d in os.listdir(DATA_DIR)
+         if os.path.isdir(os.path.join(DATA_DIR, d))],
+        reverse=True,
+    )
+    return sessions[0] if sessions else None
+
+
+def _load_results(session_id):
+    """Load the results JSON for a given session."""
+    results_path = os.path.join(DATA_DIR, session_id, 'results.json')
+    if not os.path.isfile(results_path):
+        return None
+    with open(results_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+
+def save_results(session_id, results):
+    """
+    Persist comparison results to disk as JSON.
+
+    Called by fileGetter after process_videos completes.
+    Converts numpy arrays to lists for JSON serialization.
+
+    Args:
+        session_id: Session directory name (e.g. '20260306_134500').
+        results: Dict returned by process_videos (with feedback attached).
+    """
+    import numpy as np
+
+    session_dir = os.path.join(DATA_DIR, session_id)
+    os.makedirs(session_dir, exist_ok=True)
+
+    # Make results JSON-serializable (convert numpy arrays)
+    serializable = {}
+    for key, value in results.items():
+        if isinstance(value, np.ndarray):
+            serializable[key] = value.tolist()
+        elif isinstance(value, dict):
+            serializable[key] = {
+                k: v.tolist() if isinstance(v, np.ndarray) else v
+                for k, v in value.items()
+            }
+        else:
+            serializable[key] = value
+
+    results_path = os.path.join(session_dir, 'results.json')
+    with open(results_path, 'w', encoding='utf-8') as f:
+        json.dump(serializable, f, indent=2)
+
+
+# ── Endpoints ────────────────────────────────────────────────────────────
+
+
+@app.get("/feedback")
+async def get_feedback(session_id: str = Query(default=None)):
+    """
+    Retrieve comparison feedback for a session.
+
+    Query params:
+        session_id: Optional — if omitted, returns the latest session.
+
+    Returns:
+        JSON with overall_score, skeleton_score, trajectory_score,
+        mask_score, per_joint_scores, feedback messages, etc.
+    """
+    if session_id is None:
+        session_id = _find_latest_session()
+        if session_id is None:
+            raise HTTPException(status_code=404, detail="No sessions found.")
+
+    results = _load_results(session_id)
+    if results is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No results found for session '{session_id}'.",
+        )
+
+    # Return a frontend-friendly subset
+    return JSONResponse(content={
+        "session_id": session_id,
+        "overall_score": results.get("overall_score"),
+        "skeleton_score": results.get("skeleton_score"),
+        "trajectory_score": results.get("trajectory_score"),
+        "mask_score": results.get("mask_score"),
+        "timing_cost": results.get("timing_cost"),
+        "per_joint_scores": results.get("per_joint_scores"),
+        "feedback": results.get("feedback", []),
+    })
+
+
+@app.get("/feedback/detailed")
+async def get_detailed_feedback(session_id: str = Query(default=None)):
+    """
+    Retrieve full comparison results including per-frame data.
+
+    Useful for visualisation / charting on the frontend.
+    """
+    if session_id is None:
+        session_id = _find_latest_session()
+        if session_id is None:
+            raise HTTPException(status_code=404, detail="No sessions found.")
+
+    results = _load_results(session_id)
+    if results is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No results found for session '{session_id}'.",
+        )
+
+    return JSONResponse(content={
+        "session_id": session_id,
+        **results,
+    })
+
+
+@app.get("/sessions")
+async def list_sessions():
+    """List all available session IDs."""
+    if not os.path.isdir(DATA_DIR):
+        return JSONResponse(content={"sessions": []})
+
+    sessions = sorted(
+        [d for d in os.listdir(DATA_DIR)
+         if os.path.isdir(os.path.join(DATA_DIR, d))],
+        reverse=True,
+    )
+    return JSONResponse(content={"sessions": sessions})
+
+
+if __name__ == "__main__":
+    print("Starting feedback server on http://localhost:8001")
+    uvicorn.run(app, host="127.0.0.1", port=8001)
+===
+"""
+Feedback delivery endpoint.
+
+Provides a GET endpoint to retrieve the latest comparison results
+and feedback generated by the dance comparison pipeline.
+Uses FastAPI with CORS, matching the pattern of fileGetter.py.
+"""
+import os
+import sys
+import json
+from datetime import datetime
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, FileResponse
+import uvicorn
+
+# Ensure project root is on path
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(CURRENT_DIR)
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
+app = FastAPI()
+
+# Configure CORS (same as fileGetter.py)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Storage directory for results (root/data/)
+DATA_DIR = os.path.join(ROOT_DIR, 'data')
+
+
+def _find_latest_session():
+    """Find the most recent session directory inside data/."""
+    if not os.path.isdir(DATA_DIR):
+        return None
+    sessions = sorted(
+        [d for d in os.listdir(DATA_DIR)
+         if os.path.isdir(os.path.join(DATA_DIR, d))],
+        reverse=True,
+    )
+    return sessions[0] if sessions else None
+
+
+def _load_results(session_id):
+    """Load the results JSON for a given session."""
+    results_path = os.path.join(DATA_DIR, session_id, 'results.json')
+    if not os.path.isfile(results_path):
+        return None
+    with open(results_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+
+def save_results(session_id, results):
+    """
+    Persist comparison results to disk as JSON.
+
+    Called by fileGetter after process_videos completes.
+    Converts numpy arrays to lists for JSON serialization.
+
+    Args:
+        session_id: Session directory name (e.g. '20260306_134500').
+        results: Dict returned by process_videos (with feedback attached).
+    """
+    import numpy as np
+
+    session_dir = os.path.join(DATA_DIR, session_id)
+    os.makedirs(session_dir, exist_ok=True)
+
+    # Make results JSON-serializable (convert numpy arrays)
+    serializable = {}
+    for key, value in results.items():
+        if isinstance(value, np.ndarray):
+            serializable[key] = value.tolist()
+        elif isinstance(value, dict):
+            serializable[key] = {
+                k: v.tolist() if isinstance(v, np.ndarray) else v
+                for k, v in value.items()
+            }
+        else:
+            serializable[key] = value
+
+    results_path = os.path.join(session_dir, 'results.json')
+    with open(results_path, 'w', encoding='utf-8') as f:
+        json.dump(serializable, f, indent=2)
+
+
+# ── Endpoints ────────────────────────────────────────────────────────────
+
+
+@app.get("/feedback")
+async def get_feedback(session_id: str = Query(default=None)):
+    """
+    Retrieve comparison feedback for a session.
+
+    Query params:
+        session_id: Optional — if omitted, returns the latest session.
+
+    Returns:
+        JSON with overall_score, skeleton_score, trajectory_score,
+        mask_score, per_joint_scores, feedback messages, etc.
+    """
+    if session_id is None:
+        session_id = _find_latest_session()
+        if session_id is None:
+            raise HTTPException(status_code=404, detail="No sessions found.")
+
+    results = _load_results(session_id)
+    if results is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No results found for session '{session_id}'.",
+        )
+
+    # Build video URL if the video file exists
+    video_file = os.path.join(DATA_DIR, session_id, 'feedback_video.mp4')
+    video_url = f"/feedback/video?session_id={session_id}" if os.path.isfile(video_file) else None
+
+    # Return a frontend-friendly subset
+    return JSONResponse(content={
+        "session_id": session_id,
+        "overall_score": results.get("overall_score"),
+        "skeleton_score": results.get("skeleton_score"),
+        "trajectory_score": results.get("trajectory_score"),
+        "mask_score": results.get("mask_score"),
+        "timing_cost": results.get("timing_cost"),
+        "per_joint_scores": results.get("per_joint_scores"),
+        "feedback": results.get("feedback", []),
+        "feedback_video_url": video_url,
+    })
+
+
+@app.get("/feedback/detailed")
+async def get_detailed_feedback(session_id: str = Query(default=None)):
+    """
+    Retrieve full comparison results including per-frame data.
+
+    Useful for visualisation / charting on the frontend.
+    """
+    if session_id is None:
+        session_id = _find_latest_session()
+        if session_id is None:
+            raise HTTPException(status_code=404, detail="No sessions found.")
+
+    results = _load_results(session_id)
+    if results is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No results found for session '{session_id}'.",
+        )
+
+    return JSONResponse(content={
+        "session_id": session_id,
+        **results,
+    })
+
+
+@app.get("/feedback/video")
+async def get_feedback_video(session_id: str = Query(default=None)):
+    """
+    Stream the feedback comparison video for a session.
+
+    Query params:
+        session_id: Optional — if omitted, uses the latest session.
+    """
+    if session_id is None:
+        session_id = _find_latest_session()
+        if session_id is None:
+            raise HTTPException(status_code=404, detail="No sessions found.")
+
+    video_path = os.path.join(DATA_DIR, session_id, 'feedback_video.mp4')
+    if not os.path.isfile(video_path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"No feedback video found for session '{session_id}'.",
+        )
+
+    return FileResponse(
+        video_path,
+        media_type='video/mp4',
+        filename='feedback_video.mp4',
+    )
+
+
+@app.get("/sessions")
+async def list_sessions():
+    """List all available session IDs."""
+    if not os.path.isdir(DATA_DIR):
+        return JSONResponse(content={"sessions": []})
+
+    sessions = sorted(
+        [d for d in os.listdir(DATA_DIR)
+         if os.path.isdir(os.path.join(DATA_DIR, d))],
+        reverse=True,
+    )
+    return JSONResponse(content={"sessions": sessions})
+
+
+if __name__ == "__main__":
+    print("Starting feedback server on http://localhost:8001")
+    uvicorn.run(app, host="127.0.0.1", port=8001)
+```
+
+---
+
+### [Feedback.tsx](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/view/src/components/Feedback.tsx)
+
+- Imports [VideoFeedback](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/view/src/components/VideoFeedback.tsx#10-62) component
+- Renders `<VideoFeedback>` **above** `<ResultsPanel>` when `feedback_video_url` is present
+- SSE trigger changed from `'Feedback ready.'` to `'Feedback video ready.'`
+
+```diff:Feedback.tsx
+import { useEffect, useState, useRef } from 'react';
+import Box from '@mui/material/Box';
+import SseMessages from './SseMessages';
+import ResultsPanel from './ResultsPanel';
+import { getFeedback } from '../api/feedbackGetter';
+import type { FeedbackResponse } from '../api/feedbackGetter';
+
+const Feedback = () => {
+    const [messages, setMessages] = useState<string[]>([]);
+    const [results, setResults] = useState<FeedbackResponse | null>(null);
+    const eventSource = useRef<EventSource | null>(null);
+
+    useEffect(() => {
+        // Connect to SSE endpoint
+        const es = new EventSource('http://127.0.0.1:8000/events');
+        eventSource.current = es;
+
+        es.onopen = () => {
+            console.log('Connected to SSE Events');
+        };
+
+        es.onmessage = (event) => {
+            console.log('Received SSE:', event.data);
+            setMessages((prev) => [...prev, event.data]);
+
+            // When backend signals feedback is ready, fetch the results
+            if (event.data === 'Feedback ready.') {
+                getFeedback()
+                    .then((data) => setResults(data))
+                    .catch((err) => console.error('Failed to fetch feedback:', err));
+            }
+        };
+
+        es.onerror = (error) => {
+            console.error('SSE error:', error);
+        };
+
+        return () => {
+            es.close();
+            console.log('Closed SSE connection');
+        };
+    }, []);
+
+    return (
+        <Box sx={{ pt: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, maxWidth: 700, mx: 'auto' }}>
+            <SseMessages messages={messages} />
+            {results && <ResultsPanel results={results} />}
+        </Box>
+    );
+};
+
+export default Feedback;
+===
+import { useEffect, useState, useRef } from 'react';
+import Box from '@mui/material/Box';
+import SseMessages from './SseMessages';
+import ResultsPanel from './ResultsPanel';
+import VideoFeedback from './VideoFeedback';
+import { getFeedback } from '../api/feedbackGetter';
+import type { FeedbackResponse } from '../api/feedbackGetter';
+
+const Feedback = () => {
+    const [messages, setMessages] = useState<string[]>([]);
+    const [results, setResults] = useState<FeedbackResponse | null>(null);
+    const eventSource = useRef<EventSource | null>(null);
+
+    useEffect(() => {
+        // Connect to SSE endpoint
+        const es = new EventSource('http://127.0.0.1:8000/events');
+        eventSource.current = es;
+
+        es.onopen = () => {
+            console.log('Connected to SSE Events');
+        };
+
+        es.onmessage = (event) => {
+            console.log('Received SSE:', event.data);
+            setMessages((prev) => [...prev, event.data]);
+
+            // When backend signals feedback is ready, fetch the results
+            if (event.data === 'Feedback video ready.') {
+                getFeedback()
+                    .then((data) => setResults(data))
+                    .catch((err) => console.error('Failed to fetch feedback:', err));
+            }
+        };
+
+        es.onerror = (error) => {
+            console.error('SSE error:', error);
+        };
+
+        return () => {
+            es.close();
+            console.log('Closed SSE connection');
+        };
+    }, []);
+
+    return (
+        <Box sx={{ pt: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, maxWidth: 700, mx: 'auto' }}>
+            <SseMessages messages={messages} />
+            {results?.feedback_video_url && <VideoFeedback videoUrl={results.feedback_video_url} />}
+            {results && <ResultsPanel results={results} />}
+        </Box>
+    );
+};
+
+export default Feedback;
+```
+
+---
+
+### [feedbackGetter.ts](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/view/src/api/feedbackGetter.ts)
+
+Added `feedback_video_url: string | null` to [FeedbackResponse](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/view/src/api/feedbackGetter.ts#5-16) interface.
+
+```diff:feedbackGetter.ts
+const FEEDBACK_BASE_URL = 'http://localhost:8001';
+
+// ── Types ───────────────────────────────────────────────────────────────
+
+export interface FeedbackResponse {
+    session_id: string;
+    overall_score: number;
+    skeleton_score: number;
+    trajectory_score: number;
+    mask_score: number;
+    timing_cost: number;
+    per_joint_scores: Record<string, number>;
+    feedback: string[];
+}
+
+export interface DetailedFeedbackResponse extends FeedbackResponse {
+    alignment_path: [number, number][];
+    worst_frames: [number, string, number][];
+    per_frame_shape: number[];
+    energy_details: {
+        energy_score: number;
+        per_frame_ratios: number[];
+        teacher_energy: number[];
+        student_energy: number[];
+    };
+}
+
+// ── API calls ───────────────────────────────────────────────────────────
+
+/**
+ * Fetch comparison feedback (scores + messages).
+ * If sessionId is omitted, returns the latest session.
+ */
+export const getFeedback = async (sessionId?: string): Promise<FeedbackResponse> => {
+    const url = sessionId
+        ? `${FEEDBACK_BASE_URL}/feedback?session_id=${sessionId}`
+        : `${FEEDBACK_BASE_URL}/feedback`;
+
+    try {
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data: FeedbackResponse = await response.json();
+        console.log('Feedback received:', data);
+        return data;
+    } catch (error) {
+        console.error('Error fetching feedback:', error);
+        throw error;
+    }
+};
+
+/**
+ * Fetch detailed results including per-frame data (for charts/visualisation).
+ * If sessionId is omitted, returns the latest session.
+ */
+export const getDetailedFeedback = async (sessionId?: string): Promise<DetailedFeedbackResponse> => {
+    const url = sessionId
+        ? `${FEEDBACK_BASE_URL}/feedback/detailed?session_id=${sessionId}`
+        : `${FEEDBACK_BASE_URL}/feedback/detailed`;
+
+    try {
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data: DetailedFeedbackResponse = await response.json();
+        console.log('Detailed feedback received:', data);
+        return data;
+    } catch (error) {
+        console.error('Error fetching detailed feedback:', error);
+        throw error;
+    }
+};
+
+/**
+ * Fetch all available session IDs.
+ */
+export const getSessions = async (): Promise<string[]> => {
+    try {
+        const response = await fetch(`${FEEDBACK_BASE_URL}/sessions`);
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('Sessions:', data.sessions);
+        return data.sessions;
+    } catch (error) {
+        console.error('Error fetching sessions:', error);
+        throw error;
+    }
+};
+===
+const FEEDBACK_BASE_URL = 'http://localhost:8001';
+
+// ── Types ───────────────────────────────────────────────────────────────
+
+export interface FeedbackResponse {
+    session_id: string;
+    overall_score: number;
+    skeleton_score: number;
+    trajectory_score: number;
+    mask_score: number;
+    timing_cost: number;
+    per_joint_scores: Record<string, number>;
+    feedback: string[];
+    feedback_video_url: string | null;
+}
+
+export interface DetailedFeedbackResponse extends FeedbackResponse {
+    alignment_path: [number, number][];
+    worst_frames: [number, string, number][];
+    per_frame_shape: number[];
+    energy_details: {
+        energy_score: number;
+        per_frame_ratios: number[];
+        teacher_energy: number[];
+        student_energy: number[];
+    };
+}
+
+// ── API calls ───────────────────────────────────────────────────────────
+
+/**
+ * Fetch comparison feedback (scores + messages).
+ * If sessionId is omitted, returns the latest session.
+ */
+export const getFeedback = async (sessionId?: string): Promise<FeedbackResponse> => {
+    const url = sessionId
+        ? `${FEEDBACK_BASE_URL}/feedback?session_id=${sessionId}`
+        : `${FEEDBACK_BASE_URL}/feedback`;
+
+    try {
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data: FeedbackResponse = await response.json();
+        console.log('Feedback received:', data);
+        return data;
+    } catch (error) {
+        console.error('Error fetching feedback:', error);
+        throw error;
+    }
+};
+
+/**
+ * Fetch detailed results including per-frame data (for charts/visualisation).
+ * If sessionId is omitted, returns the latest session.
+ */
+export const getDetailedFeedback = async (sessionId?: string): Promise<DetailedFeedbackResponse> => {
+    const url = sessionId
+        ? `${FEEDBACK_BASE_URL}/feedback/detailed?session_id=${sessionId}`
+        : `${FEEDBACK_BASE_URL}/feedback/detailed`;
+
+    try {
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data: DetailedFeedbackResponse = await response.json();
+        console.log('Detailed feedback received:', data);
+        return data;
+    } catch (error) {
+        console.error('Error fetching detailed feedback:', error);
+        throw error;
+    }
+};
+
+/**
+ * Fetch all available session IDs.
+ */
+export const getSessions = async (): Promise<string[]> => {
+    try {
+        const response = await fetch(`${FEEDBACK_BASE_URL}/sessions`);
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('Sessions:', data.sessions);
+        return data.sessions;
+    } catch (error) {
+        console.error('Error fetching sessions:', error);
+        throw error;
+    }
+};
+```
+
+---
+
+## Test Results
+
+Synthetic test produced correct H.264 output:
+```
+Frames: 30 (expected 30)
+Width: 640 (expected 640)
+ALL CHECKS PASSED
+```
+
+Re-generation of existing session confirmed H.264 encoding:
+```
+Stream #0:0: Video: h264 (High) (avc1), yuv420p, 60 fps
+```

@@ -1,0 +1,33 @@
+# Video Feedback Feature — Walkthrough
+
+## What Was Built
+
+A side-by-side comparison video that's generated after each dance comparison session. The video shows teacher (left) and student (right) with:
+- **Green skeleton** on both dancers
+- **Blue ghost skeleton** of the teacher overlaid on the student's frames
+
+## Files Changed
+
+| File | Change |
+|---|---|
+| [video_feedback.py](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/model/comparison/video_feedback.py) | **[NEW]** Core renderer — generates the side-by-side MP4 |
+| [video_processor.py](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/model/video_processor.py) | Added Phase 4: feedback video generation |
+| [feedbackSender.py](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/controller/feedbackSender.py) | Added `GET /feedback/video` endpoint + `feedback_video_url` in response |
+| [VideoFeedback.tsx](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/view/src/components/VideoFeedback.tsx) | **[NEW]** Video player component with MUI styling |
+| [Feedback.tsx](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/view/src/components/Feedback.tsx) | Video player positioned above ResultsPanel, SSE trigger updated |
+| [feedbackGetter.ts](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/view/src/api/feedbackGetter.ts) | Added `feedback_video_url` to [FeedbackResponse](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/view/src/api/feedbackGetter.ts#5-16) |
+| [test_video_feedback.py](file:///c:/Users/marto/Documents/egyetem/szakdoga/szakdolgozat/model/comparison/test_video_feedback.py) | **[NEW]** Test suite with synthetic data |
+
+## Test Results
+
+```
+[VideoFeedback] Rendering 30 aligned frames -> feedback_video.mp4
+Exists: True
+Frames: 30 (expected 30)
+Size: 640x240 (expected 640x240)
+ALL CHECKS PASSED
+```
+
+## Remaining
+
+Manual E2E test: upload real teacher + student videos and verify the video appears in the browser above the score results.

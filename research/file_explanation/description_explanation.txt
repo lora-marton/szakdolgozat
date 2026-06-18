@@ -1,0 +1,56 @@
+Description.tsx — App Description and Usage Guide
+===================================================
+
+Displays a unified card with two sections: a permanently visible short
+description and a collapsible "How to use" guide.
+
+
+================================================================================
+Layout
+================================================================================
+
+  Box (flex, centered)
+    └─ Paper (outlined, primary border)
+         ├─ Typography — short description, always visible
+         └─ Accordion — "How to use", collapsed by default
+              └─ Ordered list with 4 numbered paragraphs
+
+
+================================================================================
+Structure
+================================================================================
+
+  The Paper acts as a single bordered card. The Accordion is embedded inside
+  it with elevation: 0, transparent background, and the default MUI divider
+  line removed ('&:before': display: 'none'). This makes the two sections
+  look like one cohesive block rather than separate components.
+
+  The short description (Typography, p: 2) is always visible and introduces
+  the app. The Accordion title "How to use" is styled in primary color and
+  expands to reveal a numbered usage guide.
+
+
+================================================================================
+Usage Guide Content
+================================================================================
+
+  Four numbered paragraphs covering:
+
+    1. What to upload — two videos of the same choreography, similar lengths
+    2. Recording setup — fixed camera, good lighting, full body visible,
+       one person only, starting position at the beginning
+    3. Audio — music audible in both videos for synchronization, avoid noise
+    4. What to expect — real-time progress, scores, feedback, comparison video
+
+  The list numbers are styled with bold weight, slightly larger font size,
+  primary color, and extra padding after the marker for readability.
+
+
+================================================================================
+Responsive Breakpoints
+================================================================================
+
+  maxWidth scales across 4 breakpoints:
+    xs: 350px, sm: 550px, md: 750px, lg: 950px
+
+  Padding and bottom margin also adapt to screen size.
